@@ -46,7 +46,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "Kiosque v__VERSION__"
-          releaseBody: "Dans la liste « Assets » — Windows : Kiosque_…_x64-setup.exe (installation) ou Kiosque_…_portable.exe (aucune installation). macOS : Kiosque_…_universal.dmg. Linux : Kiosque_….AppImage ou .deb."
+          releaseBody: "Dans la liste « Assets » — Windows : Kiosque_…_x64-setup.exe (installation) ou Kiosque_…_portable.exe (aucune installation). macOS : Kiosque_…_universal.dmg. Linux : Kiosque_….AppImage ou .deb. Les versions macOS et Linux n'ont jamais été testées sur un vrai Mac ou un vrai Linux : si tu en essaies une et qu'un défaut apparaît, signale-le dans l'onglet Issues du dépôt."
           releaseDraft: false
           prerelease: false
           args: --bundles nsis

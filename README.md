@@ -28,9 +28,15 @@ Dans l'onglet **Releases** du dépôt, deux fichiers Windows, toujours numérot�
 
 Les deux ne sont pas signés : au premier lancement, Windows (SmartScreen) affiche un avertissement. Clique sur « Informations complémentaires », puis « Exécuter quand même ». La version portable utilise WebView2, déjà présent sur Windows 10 et 11.
 
+### macOS et Linux (non testés)
+
+Les mêmes versions existent pour **macOS** (`Kiosque_…_universal.dmg`) et **Linux** (`Kiosque_….AppImage` ou `.deb`), construites automatiquement par GitHub. **Elles n'ont jamais été essayées sur un vrai Mac ou un vrai Linux** : le programme y compile, mais l'affichage, le lecteur ou les notifications peuvent présenter des défauts. Si tu as un Mac ou un Linux, tu peux les essayer et signaler ce qui ne va pas dans l'onglet **Issues** du dépôt GitHub.
+
+Sur macOS, le fichier n'est pas signé par un compte développeur : au premier lancement, fais un clic droit sur l'application, puis « Ouvrir ». La mise à jour dans l'application n'existe que sous Windows pour l'instant ; ailleurs, le bouton « Mettre à jour » ouvre la page de la release.
+
 ## Construire les fichiers (GitHub)
 
-Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur et la version portable pour Windows sur les serveurs de GitHub : rien à installer ni à compiler chez toi, et aucun Go de plus sur ton disque.
+Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur et la version portable pour Windows, puis les fichiers macOS et Linux, sur les serveurs de GitHub : rien à installer ni à compiler chez toi, et aucun Go de plus sur ton disque.
 
 1. Crée un dépôt vide sur github.com (sans README), puis, dans PowerShell, dans le dossier du projet :
    ```
@@ -48,7 +54,7 @@ Les versions s'incrémentent toutes seules : à chaque `publier.cmd` qui envoie 
 
 L'installeur n'est pas signé : Windows (SmartScreen) affiche un avertissement au premier lancement. Clique sur « Informations complémentaires », puis « Exécuter quand même ».
 
-Le workflow ne construit que Windows. macOS et Linux se rajoutent facilement, mais sur un dépôt privé, les minutes macOS sont comptées dix fois plus vite que celles de Windows.
+Windows est construit en premier ; macOS et Linux ne démarrent que s'il réussit. Sur un dépôt privé, les minutes macOS sont comptées dix fois plus vite que celles de Windows.
 
 ## Lancer le projet sur ta machine
 
@@ -67,7 +73,7 @@ Sous Windows, `construire.bat` fabrique l'installeur avec ton Rust local (`src-t
 - **À voir** : les nouvelles vidéos, de la plus récente à la plus ancienne. Pour chacune : Regarder, Plus tard ou Ignorer. « Tout marquer comme vu » vide la boîte d'un coup.
 - **Plus tard / Vues** : les vidéos mises de côté et l'historique de ce que tu as ouvert.
 - **Lecture** : dans la fenêtre de Kiosque (lecteur YouTube avec les commandes de Kiosque, publicités possibles) ou dans ton navigateur, au choix dans Chaînes. Une vidéo dont l'auteur interdit l'intégration s'ouvre avec « Ouvrir dans le navigateur ».
-- **Plateformes** : YouTube par défaut. Dans Chaînes → Plateformes, tu peux activer PeerTube, Odysee, Vimeo et Dailymotion, puis coller l'adresse d'une chaîne. Ces vidéos se lisent avec le lecteur de leur plateforme. Twitch, Rumble ou Netflix ne proposent pas de flux public exploitable.
+- **Plateformes** : YouTube par défaut. Dans Chaînes → Plateformes, tu peux activer PeerTube, Odysee et Vimeo (Dailymotion est mis de côté pour le moment : il refuse la lecture dans l'application), puis coller l'adresse d'une chaîne. Ces vidéos se lisent avec le lecteur de leur plateforme. Twitch, Rumble ou Netflix ne proposent pas de flux public exploitable.
 
 À l'ajout d'une chaîne, ses vidéos de plus de 7 jours sont directement rangées dans « Vues » pour que la boîte de réception ne démarre pas pleine d'archives.
 
