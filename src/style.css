@@ -794,3 +794,15 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 .channels .tags:has(.folder-edit) .pf { flex: none; }
 .channels .tags:has(.folder-edit) .folder-slot { flex: 1; min-width: 0; }
 .channels .tags .folder-edit { width: 100%; margin: 0; }
+
+/* Plein écran : la vidéo occupe tout l'écran, la barre de commandes flotte dessus et se cache à l'inactivité. */
+.player-stage:fullscreen { position: relative; }
+.player-stage:fullscreen .video-area { position: absolute; inset: 0; flex: none; }
+.player-stage:fullscreen .controls {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  border-top: 0; padding-top: 28px;
+  background: linear-gradient(to top, rgb(13 34 39 / 0.92), rgb(13 34 39 / 0));
+  transition: opacity 0.25s ease;
+}
+.player-stage:fullscreen.idle .controls { opacity: 0; pointer-events: none; }
+.player-stage:fullscreen.idle { cursor: none; }

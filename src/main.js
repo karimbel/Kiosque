@@ -465,7 +465,27 @@ playerEl.addEventListener('change', (event) => {
   setTimeout(syncControls, 50);
 });
 
+// Plein écran : la barre de commandes se cache après 2,5 s sans mouvement (sauf en pause) et revient au moindre geste.
+let idleTimer = null;
+function wakeControls() {
+  const stage = document.querySelector('#player-stage');
+  if (!stage) return;
+  stage.classList.remove('idle');
+  clearTimeout(idleTimer);
+  if (!document.fullscreenElement) return;
+  idleTimer = setTimeout(() => {
+    const state = yt?.getPlayerState?.();
+    const hovering = stage.querySelector('.controls:hover');
+    if (document.fullscreenElement && state === 1 && !hovering) stage.classList.add('idle');
+    else if (document.fullscreenElement) wakeControls(); // en pause ou survol : on réessaie plus tard
+  }, 2500);
+}
+for (const type of ['mousemove', 'mousedown', 'keydown', 'touchstart']) {
+  document.addEventListener(type, () => { if (document.fullscreenElement) wakeControls(); }, { passive: true });
+}
+
 document.addEventListener('fullscreenchange', () => {
+  wakeControls();
   const full = q('[data-ctl="full"]');
   if (!full) return;
   const on = !!document.fullscreenElement;
