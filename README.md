@@ -4,6 +4,17 @@ Un lecteur de chaînes YouTube qui se termine. Tu choisis les chaînes, Kiosque 
 
 Application de bureau en Rust avec [Tauri 2](https://v2.tauri.app/). Aucun compte Google, aucune clé d'API : Kiosque lit les flux RSS publics des chaînes.
 
+![Aperçu de Kiosque, thème clair](docs/apercu-clair.png)
+
+<details>
+<summary>Thème sombre</summary>
+
+![Aperçu de Kiosque, thème sombre](docs/apercu-sombre.png)
+
+</details>
+
+Les aperçus montrent des chaînes et des vidéos d'exemple. L'interface suit le thème de ton système, et la barre du haut se réduit avec la flèche à droite.
+
 ## Obtenir l'application (GitHub)
 
 Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur Windows sur les serveurs de GitHub : rien à installer ni à compiler chez toi, et aucun Go de plus sur ton disque.
@@ -18,7 +29,7 @@ Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur Wind
    git push -u origin main
    ```
 2. Lance la construction : onglet **Actions → Construire Kiosque → Run workflow**. Compte une dizaine de minutes la première fois, moins ensuite.
-3. Va dans **Releases** : un brouillon contient `Kiosque_0.1.0_x64-setup.exe`. Télécharge-le et lance-le. « Publish release » est facultatif.
+3. Va dans **Releases** : un brouillon contient `Kiosque_0.1.0_x64-setup.exe` (installeur) et `Kiosque_0.1.0_portable.exe` (aucune installation : tu le lances directement). Télécharge celui que tu préfères. « Publish release » est facultatif.
 
 Pour une nouvelle version, change `version` dans `src-tauri/tauri.conf.json`, envoie les changements (`git add . && git commit -m "…" && git push`), puis relance le workflow, ou pousse une étiquette : `git tag v0.2.0 && git push --tags`.
 
@@ -42,7 +53,7 @@ Sous Windows, `construire.bat` fabrique l'installeur avec ton Rust local (`src-t
 - **Chaînes** : colle une adresse de chaîne, un `@pseudo` ou un identifiant `UC…`, puis « Suivre ». Coller l'adresse d'une vidéo fonctionne aussi : Kiosque suit sa chaîne.
 - **À voir** : les nouvelles vidéos, de la plus récente à la plus ancienne. Pour chacune : Regarder, Plus tard ou Ignorer. « Tout marquer comme vu » vide la boîte d'un coup.
 - **Plus tard / Vues** : les vidéos mises de côté et l'historique de ce que tu as ouvert.
-- **Lecture** : dans le navigateur, ou dans [mpv](https://mpv.io) (sans publicité ni compte, nécessite aussi [yt-dlp](https://github.com/yt-dlp/yt-dlp)). Si mpv est introuvable, Kiosque bascule sur le navigateur et te le dit.
+- **Lecture** : dans la fenêtre de Kiosque (lecteur YouTube intégré, publicités possibles), dans le navigateur, ou dans [mpv](https://mpv.io) (sans publicité ni compte, nécessite aussi [yt-dlp](https://github.com/yt-dlp/yt-dlp)). Si mpv est introuvable, Kiosque bascule sur le navigateur et te le dit. Une vidéo qui interdit l'intégration s'ouvre avec « Ouvrir dans le navigateur ».
 
 À l'ajout d'une chaîne, ses vidéos de plus de 7 jours sont directement rangées dans « Vues » pour que la boîte de réception ne démarre pas pleine d'archives.
 
