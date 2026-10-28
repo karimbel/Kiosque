@@ -1,0 +1,15 @@
+{
+  "name": "kiosque",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Un lecteur de chaînes YouTube qui se termine : uniquement ce que tu as choisi de suivre.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icons": "tauri icon app-icon.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
