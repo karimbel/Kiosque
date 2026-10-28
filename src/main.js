@@ -35,6 +35,7 @@ const app = {
   videos: [],
   settings: { player: 'inapp', exclude_shorts: '1', platforms: '', auto_update: '0' },
   autostart: false,
+  platform: (() => { try { return localStorage.getItem('platform') || ''; } catch { return ''; } })(),
   folder: (() => { try { return localStorage.getItem('folder') || ''; } catch { return ''; } })(),
   sub: (() => { try { return localStorage.getItem('sub') || 'platforms'; } catch { return 'mine'; } })(),
   version: '',
@@ -108,6 +109,10 @@ function confirmClick(button, label, ms = 3000) {
 // YouTube n'affiche que l'image, les commandes ci-dessous pilotent la vidéo.
 
 const playerEl = document.querySelector('#player');
+let captionsOn = (() => { try { return localStorage.getItem('cc') === '1'; } catch { return false; } })();
+const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+let speed = (() => { try { const s = Number(localStorage.getItem('speed')); return SPEEDS.includes(s) ? s : 1; } catch { return 1; } })();
+const speedLabel = (s) => `${String(s).replace('.', ',')}×`;
 let playing = null;      // vidéo en cours
 let yt = null;           // lecteur YouTube
 let ytTimer = null;      // rafraîchissement de la barre de progression
@@ -119,6 +124,7 @@ const ICONS = {
   volume: '<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor"/><path d="M15 9a4.5 4.5 0 0 1 0 6M17.5 6.5a8 8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   muted: '<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+  cc: '<rect x="3" y="5.5" width="18" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.5 10.3a2.3 2.3 0 1 0 0 3.4M17 10.3a2.3 2.3 0 1 0 0 3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   exit: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">${ICONS[name]}</svg>`;
@@ -186,12 +192,54 @@ function syncControls() {
   }
 }
 
+/** Seules les adresses de lecteurs intégrés sont acceptées, jamais une page de site. */
+function isPlayerUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return false;
+    return (u.hostname === 'player.vimeo.com' && u.pathname.startsWith('/video/'))
+      || (u.hostname === 'www.dailymotion.com' && u.pathname.startsWith('/embed/video/'))
+      || (u.hostname === 'odysee.com' && u.pathname.startsWith('/$/embed/'))
+      || u.pathname.startsWith('/videos/embed/'); // PeerTube
+  } catch {
+    return false;
+  }
+}
+
+function createYtPlayer(video, startAt) {
+  yt = new window.YT.Player('yt-host', {
+    host: 'https://www.youtube-nocookie.com',
+    videoId: video.id,
+    width: '100%',
+    height: '100%',
+    playerVars: {
+      autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3,
+      modestbranding: 1, playsinline: 1, hl: 'fr',
+      cc_load_policy: captionsOn ? 1 : 0, start: Math.floor(startAt),
+    },
+    events: {
+      onReady: () => { try { yt.setPlaybackRate(speed); } catch { /* facultatif */ } syncControls(); },
+      onStateChange: syncControls,
+      onError: (e) => {
+        const code = e?.data;
+        showPlayerMessage(
+          code === 101 || code === 150 || code === 153
+            ? 'L’auteur de cette vidéo interdit sa lecture hors de YouTube.'
+            : code === 100
+              ? 'Cette vidéo est privée ou a été supprimée.'
+              : 'Cette vidéo ne peut pas être lue ici.',
+        );
+      },
+    },
+  });
+}
+
 async function openPlayer(video) {
   closePlayer();
   playing = video;
   playerEl.innerHTML = `
     <div class="player-bar">
-      <button type="button" class="quiet back" data-player="close">
+      <button type="button" class="quiet back full-only" data-player="close">
         <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12.5 5l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Retour
       </button>
@@ -199,7 +247,10 @@ async function openPlayer(video) {
         <p class="player-title" title="${esc(video.title)}">${esc(calmTitle(video.title))}</p>
         <p class="player-channel">${esc(video.channel_title)}</p>
       </div>
-      <button type="button" data-player="external">Ouvrir dans le navigateur</button>
+      <button type="button" class="full-only" data-player="minimize" title="Continuer à regarder en petit pendant que tu navigues">Réduire</button>
+      <button type="button" class="full-only" data-player="external">Ouvrir dans le navigateur</button>
+      <button type="button" class="mini-only" data-player="expand" aria-label="Agrandir" title="Agrandir">${icon('full')}</button>
+      <button type="button" class="mini-only close-mini" data-player="close" aria-label="Arrêter la vidéo" title="Arrêter la vidéo">×</button>
     </div>
     <div class="player-stage" id="player-stage">
       <div class="video-area">
@@ -215,16 +266,23 @@ async function openPlayer(video) {
         <span class="time">0:00 / 0:00</span>
         <button type="button" class="ctl" data-ctl="mute" aria-label="Couper le son">${icon('volume')}</button>
         <input class="range volume" type="range" min="0" max="100" step="1" value="100" data-ctl="volume" aria-label="Volume">
+        <button type="button" class="ctl speed" data-ctl="speed" aria-label="Vitesse de lecture" title="Vitesse de lecture">${speedLabel(speed)}</button>
+        <button type="button" class="ctl cc" data-ctl="cc" aria-label="Sous-titres" aria-pressed="${captionsOn}" title="Sous-titres (si la vidéo en propose)">${icon('cc')}</button>
         <button type="button" class="ctl" data-ctl="full" aria-label="Plein écran">${icon('full')}</button>
       </div>
     </div>`;
   playerEl.hidden = false;
   q('[data-player="close"]').focus();
 
-  // Autres plateformes : le lecteur de la plateforme, avec ses propres commandes.
+  // Autres plateformes : uniquement le lecteur de la vidéo, jamais une page de site.
   if (video.embed) {
+    if (!isPlayerUrl(video.embed)) {
+      showPlayerMessage('Cette vidéo ne peut pas être lue dans Kiosque.');
+      return;
+    }
     q('#player-stage').classList.add('native');
     q('#yt-host').innerHTML = `<iframe src="${esc(video.embed)}" title="${esc(video.title)}"
+      sandbox="allow-scripts allow-same-origin allow-presentation"
       allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen
       referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
     return;
@@ -238,31 +296,20 @@ async function openPlayer(video) {
   }
   if (playing !== video) return; // fermé pendant le chargement
 
-  yt = new window.YT.Player('yt-host', {
-    host: 'https://www.youtube-nocookie.com',
-    videoId: video.id,
-    width: '100%',
-    height: '100%',
-    playerVars: {
-      autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3,
-      modestbranding: 1, playsinline: 1, cc_load_policy: 0,
-    },
-    events: {
-      onReady: () => { syncControls(); },
-      onStateChange: syncControls,
-      onError: (e) => {
-        const code = e?.data;
-        showPlayerMessage(
-          code === 101 || code === 150 || code === 153
-            ? 'L’auteur de cette vidéo interdit sa lecture hors de YouTube.'
-            : code === 100
-              ? 'Cette vidéo est privée ou a été supprimée.'
-              : 'Cette vidéo ne peut pas être lue ici.',
-        );
-      },
-    },
-  });
+  createYtPlayer(video, 0);
   ytTimer = setInterval(syncControls, 250);
+}
+
+/** Réduit le lecteur dans le coin bas gauche : la vidéo continue pendant la navigation. */
+function minimizePlayer() {
+  if (!playing || playerEl.hidden) return;
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  playerEl.classList.add('mini');
+}
+
+function expandPlayer() {
+  playerEl.classList.remove('mini');
+  q('[data-player="minimize"]')?.focus();
 }
 
 function closePlayer() {
@@ -273,6 +320,7 @@ function closePlayer() {
   yt = null;
   playing = null;
   if (!playerEl.hidden) playerEl.hidden = true;
+  playerEl.classList.remove('mini');
   playerEl.innerHTML = '';
 }
 
@@ -287,6 +335,40 @@ function toggleMute() {
   if (!yt?.isMuted) return;
   if (yt.isMuted()) { yt.unMute(); if (!yt.getVolume()) yt.setVolume(60); } else yt.mute();
   setTimeout(syncControls, 50);
+}
+
+/** Passe à la vitesse suivante (0,75× → 1× → 1,25× → 1,5× → 2× → 0,75×). */
+function cycleSpeed() {
+  if (!yt?.setPlaybackRate) return;
+  speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+  try { localStorage.setItem('speed', String(speed)); } catch { /* facultatif */ }
+  yt.setPlaybackRate(speed);
+  const button = q('[data-ctl="speed"]');
+  if (button) button.textContent = speedLabel(speed);
+}
+
+/** Active ou coupe les sous-titres : le lecteur est relancé à l'endroit où tu en étais. */
+function toggleCaptions() {
+  if (!yt?.getCurrentTime || !playing) return;
+  captionsOn = !captionsOn;
+  try { localStorage.setItem('cc', captionsOn ? '1' : '0'); } catch { /* facultatif */ }
+  const at = yt.getCurrentTime() || 0;
+  const wasPaused = yt.getPlayerState?.() === 2;
+  const video = playing;
+  try { yt.destroy(); } catch { /* déjà détruit */ }
+  yt = null;
+  const area = q('.video-area');
+  area.insertAdjacentHTML('afterbegin', '<div id="yt-host"></div>');
+  const button = q('[data-ctl="cc"]');
+  if (button) button.setAttribute('aria-pressed', String(captionsOn));
+  createYtPlayer(video, at);
+  if (wasPaused) {
+    const t = setInterval(() => {
+      if (yt?.getPlayerState?.() === 1) { yt.pauseVideo(); clearInterval(t); }
+    }, 100);
+    setTimeout(() => clearInterval(t), 5000);
+  }
+  setStatus(captionsOn ? 'Sous-titres activés (si la vidéo en propose)' : 'Sous-titres coupés');
 }
 
 function toggleFullscreen() {
@@ -308,6 +390,8 @@ playerEl.addEventListener('click', async (event) => {
     switch (ctl.dataset.ctl) {
       case 'toggle': return togglePlay();
       case 'mute': return toggleMute();
+      case 'speed': return cycleSpeed();
+      case 'cc': return toggleCaptions();
       case 'full': return toggleFullscreen();
     }
     return;
@@ -315,6 +399,8 @@ playerEl.addEventListener('click', async (event) => {
   const button = event.target.closest('[data-player]');
   if (!button) return;
   if (button.dataset.player === 'close') return closePlayer();
+  if (button.dataset.player === 'minimize') return minimizePlayer();
+  if (button.dataset.player === 'expand') return expandPlayer();
   if (button.dataset.player === 'external' && playing) {
     try {
       await invoke('open_video', { id: playing.id, player: 'browser' });
@@ -362,16 +448,17 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 document.addEventListener('keydown', (event) => {
-  if (playerEl.hidden) return;
+  if (playerEl.hidden || playerEl.classList.contains('mini')) return;
   const tag = event.target.tagName;
   if (event.key === 'Escape') {
-    if (!document.fullscreenElement) closePlayer();
+    if (!document.fullscreenElement) minimizePlayer();
     return;
   }
   if (event.target.type === 'range' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
   if (event.key === ' ' && tag !== 'BUTTON') { event.preventDefault(); togglePlay(); }
   else if (event.key === 'ArrowRight') { event.preventDefault(); seekBy(5); }
   else if (event.key === 'ArrowLeft') { event.preventDefault(); seekBy(-5); }
+  else if (event.key === 'c' || event.key === 'C') toggleCaptions();
   else if (event.key === 'f' || event.key === 'F') toggleFullscreen();
   else if (event.key === 'm' || event.key === 'M') toggleMute();
 });
@@ -456,18 +543,49 @@ function setFolder(name) {
   try { localStorage.setItem('folder', name); } catch { /* sans mémoire, le filtre repart de « Tous » */ }
 }
 
-function folderBar(items) {
-  const names = folderNames();
-  if (!names.length) return '';
-  const active = currentFolder();
-  const chip = (name, label, count) =>
-    `<button type="button" class="chip" data-act="folder" data-folder="${esc(name)}" aria-pressed="${active === name}">${esc(label)}<span class="chip-count">${count}</span></button>`;
-  return `<div class="folders" role="group" aria-label="Dossiers">${chip('', 'Tous', items.length)}${names
-    .map((n) => chip(n, n, items.filter((v) => v.category === n).length))
-    .join('')}</div>`;
+const platformsPresent = () => {
+  const keys = new Set(app.channels.map((c) => c.platform).filter(Boolean));
+  return ['youtube', ...PLATFORMS.map((p) => p[0])].filter((k) => keys.has(k));
+};
+
+function currentPlatform() {
+  if (app.platform && !platformsPresent().includes(app.platform)) setPlatform('');
+  return app.platform;
+}
+
+function setPlatform(key) {
+  app.platform = key;
+  try { localStorage.setItem('platform', key); } catch { /* sans mémoire, le filtre repart de « Toutes » */ }
 }
 
 const inFolder = (v) => !currentFolder() || v.category === currentFolder();
+const inPlatform = (v) => !currentPlatform() || v.platform === currentPlatform();
+const visible = (v) => inFolder(v) && inPlatform(v);
+const filtering = () => !!(currentFolder() || currentPlatform());
+
+/** Filtres au-dessus de la liste : dossiers et plateformes (chacun compte ce que l'autre laisse passer). */
+function filterBars(items) {
+  const chip = (act, attr, value, label, count, active) =>
+    `<button type="button" class="chip" data-act="${act}" data-${attr}="${esc(value)}" aria-pressed="${active}">${esc(label)}<span class="chip-count">${count}</span></button>`;
+  let html = '';
+  const names = folderNames();
+  if (names.length) {
+    const active = currentFolder();
+    const base = items.filter(inPlatform);
+    html += `<div class="folders" role="group" aria-label="Dossiers">${chip('folder', 'folder', '', 'Tous', base.length, active === '')}${names
+      .map((n) => chip('folder', 'folder', n, n, base.filter((v) => v.category === n).length, active === n))
+      .join('')}</div>`;
+  }
+  const keys = platformsPresent();
+  if (keys.length > 1) {
+    const active = currentPlatform();
+    const base = items.filter(inFolder);
+    html += `<div class="folders" role="group" aria-label="Plateformes">${chip('platform', 'platform', '', 'Toutes', base.length, active === '')}${keys
+      .map((k) => chip('platform', 'platform', k, platformLabel(k), base.filter((v) => v.platform === k).length, active === k))
+      .join('')}</div>`;
+  }
+  return html;
+}
 
 function renderVideos() {
   const thumbs = showThumbs();
@@ -476,24 +594,24 @@ function renderVideos() {
     const latest = latestAll.length
       ? `<section class="latest" aria-labelledby="latest-title">
           <h2 id="latest-title">Dernières vidéos de tes chaînes</h2>
-          ${folderBar(latestAll)}
-          <ul class="feed${thumbs ? ' cards' : ''}">${latestAll.filter(inFolder).map((v) => videoRow(v, thumbs, true)).join('')}</ul>
+          ${filterBars(latestAll)}
+          <ul class="feed${thumbs ? ' cards' : ''}">${latestAll.filter(visible).map((v) => videoRow(v, thumbs, true)).join('')}</ul>
         </section>`
       : '';
     view.innerHTML = emptyState() + latest;
     return;
   }
-  const shown = app.videos.filter(inFolder);
-  // « Tout marquer comme vu » concerne toute la boîte : on le masque quand un dossier filtre la liste.
-  const bar = app.tab === 'new' && shown.length && !currentFolder()
+  const shown = app.videos.filter(visible);
+  // « Tout marquer comme vu » concerne toute la boîte : on le masque quand un filtre est actif.
+  const bar = app.tab === 'new' && shown.length && !filtering()
     ? '<div class="bar"><button type="button" class="quiet" data-act="all-seen">Tout marquer comme vu</button></div>'
     : '';
   const body = shown.length
     ? `<ul class="feed${thumbs ? ' cards' : ''}">${shown.map((v) => videoRow(v, thumbs)).join('')}</ul>`
-    : `<div class="empty compact"><h2>Rien ici dans « ${esc(currentFolder())} »</h2>
-        <p>Les autres dossiers ont encore des vidéos.</p>
-        <button type="button" class="primary" data-act="folder" data-folder="">Voir tous les dossiers</button></div>`;
-  view.innerHTML = `${folderBar(app.videos)}${bar}${body}`;
+    : `<div class="empty compact"><h2>Rien ici avec ce filtre</h2>
+        <p>Les autres dossiers et plateformes ont encore des vidéos.</p>
+        <button type="button" class="primary" data-act="reset-filters">Tout afficher</button></div>`;
+  view.innerHTML = `${filterBars(app.videos)}${bar}${body}`;
 }
 
 const AVATAR_COLORS = ['#e4572e', '#0f766e', '#b7791f', '#6d28d9', '#1d4e89', '#4d7c0f', '#be185d'];
@@ -515,7 +633,7 @@ const PLATFORMS = [
   ['vimeo', 'Vimeo', 'Chaînes et comptes Vimeo.'],
   ['dailymotion', 'Dailymotion', 'Chaînes Dailymotion.'],
 ];
-const platformLabel = (key) => PLATFORMS.find((p) => p[0] === key)?.[1] ?? '';
+const platformLabel = (key) => (key === 'youtube' ? 'YouTube' : PLATFORMS.find((p) => p[0] === key)?.[1] ?? '');
 const activePlatforms = () => (app.settings.platforms || '').split(',').filter(Boolean);
 
 const PLAYER_HINTS = {
@@ -531,9 +649,9 @@ function renderChannels() {
   const card = (c) => `<li data-id="${esc(c.id)}">
         ${avatar(c)}
         <div class="info">
-          <span class="line"><span class="name">${esc(c.title)}</span>${platformLabel(c.platform) ? `<span class="pf">${esc(platformLabel(c.platform))}</span>` : ''}${c.new_count ? `<span class="pill">${c.new_count} à voir</span>` : ''}</span>
+          <span class="line"><span class="name">${esc(c.title)}</span>${c.new_count ? `<span class="pill">${c.new_count} à voir</span>` : ''}</span>
           ${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}
-          <span class="folder-slot"><button type="button" class="folder-chip${c.category ? ' set' : ''}" data-act="edit-folder" title="Choisir le dossier de cette chaîne">${c.category ? esc(c.category) : '+ Dossier'}</button></span>
+          <span class="tags">${platformLabel(c.platform) ? `<span class="pf" data-pf="${esc(c.platform)}">${esc(platformLabel(c.platform))}</span>` : ''}<span class="folder-slot"><button type="button" class="folder-chip${c.category ? ' set' : ''}" data-act="edit-folder" title="Choisir le dossier de cette chaîne">${c.category ? esc(c.category) : '+ Dossier'}</button></span></span>
         </div>
         <button type="button" class="remove" data-act="remove-channel" aria-label="Retirer ${esc(c.title)}" title="Retirer cette chaîne">
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 2.5l7 7m0-7l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
@@ -562,7 +680,7 @@ function renderChannels() {
     platforms: `
       ${toggle('pf-youtube', 'YouTube', 'Toujours actif (par défaut).', 'disabled', true)}
       ${PLATFORMS.map(([key, label, help]) => toggle('pf-' + key, label, help, `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
-      <p class="hint">Colle ensuite l’adresse d’une chaîne de la plateforme dans « Suivre ».</p>`,
+      <p class="hint">Colle ensuite l’adresse d’une chaîne ou d’une vidéo de la plateforme dans « Suivre ».</p>`,
     playback: `
       <div class="segmented" role="radiogroup" aria-label="Lecteur vidéo">
         ${segment('inapp', 'Dans Kiosque')}${segment('browser', 'Navigateur')}
@@ -575,31 +693,40 @@ function renderChannels() {
       ${toggle('autostart', 'Lancer au démarrage', 'Kiosque s’ouvre en même temps que ton ordinateur.', 'data-local="autostart"', app.autostart)}`,
   };
 
+  view.classList.toggle('scrolled', view.scrollTop > 2);
   view.innerHTML = `
     <div class="manage">
-      <section class="mine" aria-labelledby="mine-title">
-        <div class="section-head">
-          <h2 id="mine-title">Mes chaînes</h2>
-          <span class="note">${n ? `${n} ${plural(n, 'chaîne suivie', 'chaînes suivies')}` : ''}</span>
-        </div>
+      <div class="addbar">
+        <h2 class="addbar-title"><label for="channel-input">Ajouter une chaîne</label></h2>
         <form id="add" class="add">
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <label class="sr" for="channel-input">Chaîne à suivre</label>
-          <input id="channel-input" type="text" placeholder="Ajouter : @pseudo, adresse de chaîne…" autocomplete="off" spellcheck="false">
+          <input id="channel-input" type="text" placeholder="@pseudo, adresse d’une chaîne ou d’une vidéo…" autocomplete="off" spellcheck="false">
           <button type="submit" class="primary">Suivre</button>
         </form>
-        ${list}
-      </section>
+      </div>
 
-      <aside class="prefs card" aria-label="Réglages">
-        <div class="subtabs" role="tablist" aria-label="Réglages">
-          ${SUBS.map(([k, label]) => `<button type="button" role="tab" id="sub-${k}" data-sub="${k}" aria-selected="${app.sub === k}" tabindex="${app.sub === k ? 0 : -1}">${label}</button>`).join('')}
-        </div>
-        <div class="subpanel" role="tabpanel" aria-labelledby="sub-${app.sub}">${panels[app.sub]}</div>
-        ${app.version ? `<p class="version">Kiosque ${esc(app.version)}</p>` : ''}
-      </aside>
+      <div class="cols">
+        <section class="mine" aria-labelledby="mine-title">
+          <div class="section-head">
+            <h2 id="mine-title">Mes chaînes</h2>
+            <span class="note">${n ? `${n} ${plural(n, 'chaîne suivie', 'chaînes suivies')}` : ''}</span>
+          </div>
+          ${list}
+        </section>
+
+        <aside class="prefs card" aria-label="Réglages">
+          <div class="subtabs" role="tablist" aria-label="Réglages">
+            ${SUBS.map(([k, label]) => `<button type="button" role="tab" id="sub-${k}" data-sub="${k}" aria-selected="${app.sub === k}" tabindex="${app.sub === k ? 0 : -1}">${label}</button>`).join('')}
+          </div>
+          <div class="subpanel" role="tabpanel" aria-labelledby="sub-${app.sub}">${panels[app.sub]}</div>
+          ${app.version ? `<p class="version">Kiosque ${esc(app.version)}</p>` : ''}
+        </aside>
+      </div>
     </div>`;
 }
+
+// Ombre sous la barre d'ajout dès que la page défile.
+view.addEventListener('scroll', () => view.classList.toggle('scrolled', view.scrollTop > 2), { passive: true });
 
 view.addEventListener('click', (event) => {
   const tab = event.target.closest('[data-sub]');
@@ -627,7 +754,7 @@ function render() {
 }
 
 async function switchTab(tab) {
-  closePlayer();
+  minimizePlayer();
   app.tab = tab;
   try {
     if (tab !== 'channels') await loadVideos();
@@ -698,6 +825,13 @@ view.addEventListener('click', async (event) => {
         return switchTab('channels');
       case 'folder':
         setFolder(button.dataset.folder);
+        return renderVideos();
+      case 'platform':
+        setPlatform(button.dataset.platform);
+        return renderVideos();
+      case 'reset-filters':
+        setFolder('');
+        setPlatform('');
         return renderVideos();
       case 'edit-folder': {
         const channel = app.channels.find((c) => c.id === li.dataset.id);
@@ -800,6 +934,13 @@ view.addEventListener('submit', async (event) => {
     setStatus(`« ${channel.title} » est suivie`);
     await loadChannels();
     render();
+    // La nouvelle carte est mise en vue et brièvement mise en évidence.
+    const card = [...document.querySelectorAll('.channels li')].find((li) => li.dataset.id === channel.id);
+    if (card) {
+      card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      card.classList.add('just-added');
+      setTimeout(() => card.classList.remove('just-added'), 2400);
+    }
   } catch (err) {
     setStatus(String(err), 'error');
     submit.disabled = false;

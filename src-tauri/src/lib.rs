@@ -43,14 +43,9 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
                 "Cette adresse est une chaîne {name}. Active {name} dans Chaînes → Plateformes pour la suivre."
             ));
         }
-        let id = match found.kind {
-            providers::Kind::Channel(id) => id,
-            providers::Kind::PeerTubeVideo { host, uuid } => {
-                providers::peertube_channel_of_video(&state.http, &host, &uuid)
-                    .await
-                    .map_err(|err| format!("Vidéo PeerTube introuvable ({err})."))?
-            }
-        };
+        let id = providers::channel_of_video(&state.http, &found.kind)
+            .await
+            .map_err(|err| format!("Impossible de retrouver la chaîne de cette vidéo ({err})."))?;
         return add_other_channel(&state, id).await;
     }
     let id = resolve::resolve_channel_id(&state.http, &input).await?;

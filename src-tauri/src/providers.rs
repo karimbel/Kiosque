@@ -98,6 +98,8 @@ pub enum Kind {
     Channel(String),
     /// Adresse d'une vidéo PeerTube : la chaîne s'obtient par l'interface de l'instance.
     PeerTubeVideo { host: String, uuid: String },
+    DailymotionVideo(String),
+    VimeoVideo(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -192,6 +194,8 @@ pub fn detect(input: &str) -> Result<Option<Detected>, String> {
                     platform: Platform::Vimeo,
                     kind: Kind::Channel(format!("vi:channels/{}", segments[1])),
                 }))
+            } else if first.len() >= 4 && first.chars().all(|c| c.is_ascii_digit()) {
+                Ok(Some(Detected { platform: Platform::Vimeo, kind: Kind::VimeoVideo(first.to_string()) }))
             } else if valid_name(first)
                 && !first.chars().all(|c| c.is_ascii_digit())
                 && !matches!(first, "groups" | "ondemand" | "watch" | "categories" | "search" | "upload" | "features")
@@ -206,6 +210,12 @@ pub fn detect(input: &str) -> Result<Option<Detected>, String> {
         }
 
         "dailymotion.com" => {
+            if first == "video" {
+                let id = segments.get(1).map(|v| v.split('_').next().unwrap_or("")).unwrap_or("");
+                if !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    return Ok(Some(Detected { platform: Platform::Dailymotion, kind: Kind::DailymotionVideo(id.to_string()) }));
+                }
+            }
             let name = if first == "user" { segments.get(1).map(String::as_str).unwrap_or("") } else { first };
             if valid_name(name) && !matches!(name, "video" | "playlist" | "search" | "embed") {
                 Ok(Some(Detected {
@@ -411,6 +421,16 @@ fn parse_rss(bytes: &[u8], extract: impl Fn(&str) -> Option<String>) -> Result<F
     for entry in feed.entries {
         let Some(link) = entry.links.first().map(|l| l.href.clone()) else { continue };
         let Some(id) = extract(&link) else { continue };
+        // Une entrée qui annonce un contenu autre que vidéo (article, texte…) n'est pas une vidéo.
+        let types: Vec<String> = entry
+            .media
+            .iter()
+            .flat_map(|m| m.content.iter())
+            .filter_map(|c| c.content_type.as_ref().map(|t| t.to_string()))
+            .collect();
+        if !types.is_empty() && !types.iter().any(|t| t.starts_with("video/")) {
+            continue;
+        }
         videos.push(ParsedVideo {
             id,
             title: entry.title.map(|t| t.content).unwrap_or_default(),
@@ -479,6 +499,29 @@ pub async fn fetch(http: &reqwest::Client, channel_id: &str) -> Result<Fetched, 
 }
 
 /// Pour une adresse de vidéo PeerTube : retrouve la chaîne (`nom@instance`).
+/// Retrouve la chaîne d'une vidéo (PeerTube, Dailymotion ou Vimeo) à partir de son adresse.
+pub async fn channel_of_video(http: &reqwest::Client, kind: &Kind) -> Result<String, String> {
+    match kind {
+        Kind::Channel(id) => Ok(id.clone()),
+        Kind::PeerTubeVideo { host, uuid } => peertube_channel_of_video(http, host, uuid).await,
+        Kind::DailymotionVideo(id) => {
+            let video = get_json(http, &format!("https://api.dailymotion.com/video/{id}?fields=owner.username")).await?;
+            let name = video["owner.username"].as_str().filter(|n| valid_name(n)).ok_or("chaîne introuvable")?;
+            Ok(format!("dm:{name}"))
+        }
+        Kind::VimeoVideo(id) => {
+            let video = get_json(http, &format!("https://vimeo.com/api/oembed.json?url=https%3A%2F%2Fvimeo.com%2F{id}")).await?;
+            let author = video["author_url"].as_str().unwrap_or("");
+            let name = author.trim_end_matches('/').rsplit('/').next().unwrap_or("");
+            if valid_name(name) && !name.is_empty() {
+                Ok(format!("vi:{name}"))
+            } else {
+                Err("chaîne introuvable".into())
+            }
+        }
+    }
+}
+
 pub async fn peertube_channel_of_video(http: &reqwest::Client, host: &str, uuid: &str) -> Result<String, String> {
     let video = get_json(http, &format!("https://{host}/api/v1/videos/{uuid}")).await?;
     let name = video["channel"]["name"].as_str().ok_or("chaîne introuvable")?;
@@ -502,6 +545,7 @@ mod tests {
     fn reconnait_les_adresses_des_plateformes() {
         assert_eq!(channel("framasoft@framatube.org").as_deref(), Some("pt:framasoft@framatube.org"));
         assert_eq!(channel("https://framatube.org/c/framasoft_channel/videos").as_deref(), Some("pt:framasoft_channel@framatube.org"));
+        assert_eq!(channel("https://framatube.org/c/framablog.audio/videos").as_deref(), Some("pt:framablog.audio@framatube.org"));
         assert_eq!(channel("https://peertube.example/video-channels/chat").as_deref(), Some("pt:chat@peertube.example"));
         assert_eq!(channel("https://odysee.com/@Nom:c/une-video:a").as_deref(), Some("od:@Nom:c"));
         assert_eq!(channel("https://odysee.com/@Nom%3Ac").as_deref(), Some("od:@Nom:c"));
@@ -522,9 +566,16 @@ mod tests {
 
     #[test]
     fn adresses_de_video_ou_incompletes() {
-        assert!(detect("https://vimeo.com/123456789").is_err());
         assert!(detect("https://odysee.com/une-video:abc").is_err());
-        assert!(detect("https://www.dailymotion.com/video/x8abc").is_err());
+        assert_eq!(detect("https://vimeo.com/123456789").unwrap().unwrap().kind, Kind::VimeoVideo("123456789".into()));
+        assert_eq!(
+            detect("https://www.dailymotion.com/video/xbnv85q").unwrap().unwrap().kind,
+            Kind::DailymotionVideo("xbnv85q".into())
+        );
+        assert_eq!(
+            detect("https://www.dailymotion.com/video/x8abc_titre-de-la-video").unwrap().unwrap().kind,
+            Kind::DailymotionVideo("x8abc".into())
+        );
         assert_eq!(
             detect("https://framatube.org/w/p3KkDCa7ZGyKLgLiDnA3dJ").unwrap().unwrap().kind,
             Kind::PeerTubeVideo { host: "framatube.org".into(), uuid: "p3KkDCa7ZGyKLgLiDnA3dJ".into() }
@@ -605,5 +656,17 @@ mod tests {
         let f = parse_rss(odysee.as_bytes(), odysee_id).unwrap();
         assert_eq!(f.videos[0].id, "od:ma-video:a1b2c3");
         assert_eq!(f.videos[0].url.as_deref(), Some("https://odysee.com/@Nom:c/ma-video:a1b2c3"));
+    }
+
+    #[test]
+    fn odysee_ignore_les_articles() {
+        let flux = r#"<?xml version="1.0"?><rss version="2.0"><channel><title>Ma chaine</title>
+            <item><title>Un article</title><link>https://odysee.com/@Nom:c/un-article:aaa</link><enclosure url="https://odysee.com/a.md" type="text/markdown" length="10"/></item>
+            <item><title>Une video</title><link>https://odysee.com/@Nom:c/une-video:bbb</link><enclosure url="https://odysee.com/v.mp4" type="video/mp4" length="10"/></item>
+            <item><title>Sans type</title><link>https://odysee.com/@Nom:c/sans-type:ccc</link></item>
+            </channel></rss>"#;
+        let f = parse_rss(flux.as_bytes(), odysee_id).unwrap();
+        let ids: Vec<_> = f.videos.iter().map(|v| v.id.as_str()).collect();
+        assert_eq!(ids, vec!["od:une-video:bbb", "od:sans-type:ccc"]);
     }
 }

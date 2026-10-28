@@ -317,13 +317,28 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
 
-.manage {
+.manage { padding-top: 0; }
+.cols {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: clamp(24px, 4vw, 56px);
   align-items: start;
-  padding-top: 24px;
+  padding-top: 20px;
 }
+/* Barre d'ajout : reste visible en haut pendant le défilement. */
+.addbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 16px;
+  margin: -8px calc(-1 * var(--gutter)) 0;
+  padding: 12px var(--gutter);
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.addbar-title { margin: 0; font-size: 17px; letter-spacing: -0.01em; white-space: nowrap; }
+.addbar .add { flex: 1; min-width: 0; margin-bottom: 0; }
+.channels li { scroll-margin-top: 96px; scroll-margin-bottom: 24px; }
+.channels li.just-added { box-shadow: 0 0 0 3px var(--accent); }
+.channels li { transition: box-shadow 0.6s ease; }
 .subtabs { display: flex; gap: 2px; margin: -6px -6px 12px; border-bottom: 1px solid var(--line); }
 .subtabs button {
   flex: 1; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
@@ -473,7 +488,7 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 .empty-small p { margin: 0 auto; max-width: 40ch; color: var(--muted); }
 
 /* Réglages : colonne de droite. */
-.prefs { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 8px; }
+.prefs { display: flex; flex-direction: column; gap: 18px; position: sticky; top: 108px; }
 .card { padding: 18px 18px 16px; border: 1px solid var(--line); border-radius: 14px; }
 .hint { margin: 12px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
 
@@ -540,8 +555,10 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 .switch:checked::after { transform: translateX(18px); }
 
 @media (max-width: 900px) {
-  .manage { grid-template-columns: minmax(0, 1fr); }
+  .cols { grid-template-columns: minmax(0, 1fr); }
   .prefs { position: static; }
+  .addbar { flex-wrap: wrap; gap: 6px 16px; }
+  .addbar .add { flex-basis: 100%; }
 }
 
 /* ---------- lecteur intégré ---------- */
@@ -695,3 +712,33 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 
 .prefs .version { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); text-align: center; }
 .update.busy button { display: none; }
+
+/* Lecteur réduit : reste en lecture dans le coin bas gauche pendant la navigation */
+.mini-only { display: none; }
+.player.mini {
+  position: fixed; inset: auto auto 16px 16px; z-index: 30;
+  width: min(380px, calc(100vw - 32px)); height: auto;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+}
+.player.mini .full-only { display: none; }
+.player.mini .mini-only { display: inline-flex; align-items: center; justify-content: center; }
+.player.mini .player-bar { padding: 6px 8px 6px 12px; gap: 6px; flex-wrap: nowrap; border-bottom: 0; }
+.player.mini .player-info { flex: 1 1 auto; flex-basis: auto; order: 0; min-width: 0; }
+.player.mini .player-title { font-size: 13px; -webkit-line-clamp: 1; line-clamp: 1; margin: 0; }
+.player.mini .player-channel { display: none; }
+.player.mini .player-bar button { padding: 4px 8px; }
+.player.mini .close-mini { font-size: 20px; line-height: 1; }
+.player.mini .player-stage { flex: none; }
+.player.mini .video-area { flex: none; aspect-ratio: 16 / 9; }
+.player.mini .controls { display: none; }
+
+.controls button.cc[aria-pressed="true"] { background: rgb(255 255 255 / 0.22); color: #fff; box-shadow: inset 0 -3px 0 var(--awning-red); border-radius: 8px; }
+
+.controls button.speed { width: auto; min-width: 46px; padding: 0 8px; border-radius: 8px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.channels .tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.channels .tags .folder-slot { display: inline-flex; }
+
+.addbar { transition: box-shadow 0.2s ease; }
+#view.scrolled .addbar { box-shadow: 0 8px 14px -8px rgb(0 0 0 / 0.35); }
