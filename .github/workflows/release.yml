@@ -1,10 +1,17 @@
 name: Construire Kiosque
 
-# Se lance quand tu publies une étiquette de version (v0.1.0, v0.2.0…)
-# ou à la demande, depuis l'onglet « Actions » du dépôt.
+# Se lance tout seul dès qu'un changement du programme est envoyé sur GitHub (publier.cmd),
+# ou à la demande depuis l'onglet « Actions ». Les changements de README ou d'images ne
+# relancent rien. La release de la version en cours est mise à jour avec les nouveaux fichiers.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "package.json"
+      - "app-icon.png"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:

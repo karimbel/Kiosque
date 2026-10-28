@@ -42,4 +42,4 @@ git push
 Verifier "l'envoi a échoué (copie le message ci-dessus et envoie-le à Claude)"
 
 Write-Host "`nTerminé : tout est sur GitHub." -ForegroundColor Green
-Write-Host "Pour construire l'installeur et la version portable : GitHub > Actions > Construire Kiosque > Run workflow." -ForegroundColor Gray
+Write-Host "La construction de l'installeur et de la version portable démarre toute seule sur GitHub (onglet Actions, environ 10 minutes)." -ForegroundColor Gray
