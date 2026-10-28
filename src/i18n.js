@@ -69,6 +69,7 @@ const EN = {
   'Les autres dossiers et plateformes ont encore des vidéos.': 'Other folders and platforms still have videos.',
   'Tout afficher': 'Show all',
   'Tout': 'All',
+  '« {title} » est déjà dans tes chaînes': '“{title}” is already in your channels',
   'Téléchargement de Kiosque {v}…': 'Downloading Kiosque {v}…',
   'Installation de Kiosque {v}…': 'Installing Kiosque {v}…',
   'Relance de Kiosque…': 'Restarting Kiosque…',

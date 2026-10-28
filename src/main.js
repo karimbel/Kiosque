@@ -978,7 +978,10 @@ view.addEventListener('submit', async (event) => {
   setStatus(t('Recherche de la chaîne…'));
   try {
     const channel = await invoke('add_channel', { input: value });
-    setStatus(t('« {title} » est suivie', { title: channel.title }));
+    const already = app.channels.some((c) => c.id === channel.id);
+    setStatus(already
+      ? t('« {title} » est déjà dans tes chaînes', { title: channel.title })
+      : t('« {title} » est suivie', { title: channel.title }));
     await loadChannels();
     render();
     // La nouvelle carte est mise en vue et brièvement mise en évidence.
