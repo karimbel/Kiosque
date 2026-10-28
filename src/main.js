@@ -900,8 +900,14 @@ view.addEventListener('click', async (event) => {
           ?? { id, title: '', channel_title: '' };
         setStatus('');
 
-        // Réglage « Navigateur » : la vidéo s'ouvre hors de Kiosque.
-        if (app.settings.player === 'browser') {
+        // Réglage « Navigateur » : la vidéo s'ouvre hors de Kiosque. Dailymotion : si l'auteur interdit
+        // l'intégration (le lecteur afficherait « Forbidden »), la vidéo s'ouvre aussi dans le navigateur.
+        let external = app.settings.player === 'browser';
+        if (!external && video.platform === 'dailymotion' && !(await invoke('can_embed', { id }))) {
+          external = true;
+          setStatus(t('L’auteur de cette vidéo Dailymotion interdit sa lecture hors de Dailymotion : ouverture dans le navigateur.'));
+        }
+        if (external) {
           await invoke('open_video', { id });
           if (isLatest || app.tab === 'seen') return;
           return dismissRow(li);

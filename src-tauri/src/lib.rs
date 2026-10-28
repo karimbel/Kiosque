@@ -219,6 +219,12 @@ fn open_video(id: String, state: State<'_, AppState>) -> Result<(), String> {
     state.db.set_state(&id, "seen")
 }
 
+/// La vidéo peut-elle être lue dans le lecteur intégré ? (Dailymotion : seulement si l'auteur autorise l'intégration.)
+#[tauri::command]
+async fn can_embed(id: String, state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(providers::dailymotion_embeddable(&state.http, &id).await)
+}
+
 // ---------- réglages ----------
 
 const SETTINGS: [(&str, &str); 5] = [
@@ -556,6 +562,7 @@ pub fn run() {
             set_status,
             mark_all_seen,
             open_video,
+            can_embed,
             get_settings,
             set_setting,
             app_version,

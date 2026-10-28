@@ -324,6 +324,19 @@ async fn get_json(http: &reqwest::Client, url: &str) -> Result<Value, String> {
     serde_json::from_str(&text).map_err(|err| crate::tr!("réponse illisible ({err})", "unreadable response ({err})"))
 }
 
+/// Dailymotion : l'auteur peut interdire l'intégration de sa vidéo (le lecteur affiche alors « Forbidden »).
+/// En cas de doute (réseau, réponse inattendue), on tente quand même la lecture intégrée.
+pub async fn dailymotion_embeddable(http: &reqwest::Client, video_id: &str) -> bool {
+    let Some(id) = video_id.strip_prefix("dm:") else { return true };
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return true;
+    }
+    match get_json(http, &format!("https://api.dailymotion.com/video/{id}?fields=allow_embed")).await {
+        Ok(json) => json["allow_embed"].as_bool() != Some(false),
+        Err(_) => true,
+    }
+}
+
 pub fn parse_peertube_videos(json: &Value, host: &str) -> Vec<ParsedVideo> {
     json["data"]
         .as_array()

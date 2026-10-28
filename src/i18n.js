@@ -69,6 +69,7 @@ const EN = {
   'Les autres dossiers et plateformes ont encore des vidéos.': 'Other folders and platforms still have videos.',
   'Tout afficher': 'Show all',
   'Tout': 'All',
+  'L’auteur de cette vidéo Dailymotion interdit sa lecture hors de Dailymotion : ouverture dans le navigateur.': 'This Dailymotion video’s author does not allow playback outside Dailymotion: opening in your browser.',
   '« {title} » est déjà dans tes chaînes': '“{title}” is already in your channels',
   'Téléchargement de Kiosque {v}…': 'Downloading Kiosque {v}…',
   'Installation de Kiosque {v}…': 'Installing Kiosque {v}…',
