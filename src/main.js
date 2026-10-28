@@ -43,7 +43,8 @@ const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const plural = (n, one, many) => (n > 1 ? many : one);
-const showThumbs = () => localStorage.getItem('thumbs') === '1';
+// Miniatures affichées par défaut ; se désactivent dans Chaînes.
+const showThumbs = () => { try { return localStorage.getItem('thumbs') !== '0'; } catch { return true; } };
 
 function setStatus(message, kind = '') {
   statusEl.textContent = message;
@@ -192,9 +193,10 @@ function actionsFor(tab) {
 }
 
 function videoRow(v, thumbs) {
-  const hasThumb = thumbs && v.thumb;
-  return `<li class="item${hasThumb ? ' has-thumb' : ''}" data-id="${esc(v.id)}">
-    ${hasThumb ? `<img class="thumb" src="${esc(v.thumb)}" alt="" loading="lazy">` : ''}
+  // Miniature fournie par le flux, sinon celle que YouTube publie pour chaque vidéo.
+  const src = v.thumb || `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
+  return `<li class="item${thumbs ? ' has-thumb' : ''}" data-id="${esc(v.id)}">
+    ${thumbs ? `<button type="button" class="thumb-btn" data-act="watch" tabindex="-1" aria-hidden="true"><img class="thumb" src="${esc(src)}" alt="" loading="lazy" onerror="this.closest('.thumb-btn').remove()"></button>` : ''}
     <div>
       <button type="button" class="title" data-act="watch" title="${esc(v.title)}">${esc(calmTitle(v.title))}</button>
       <p class="meta"><span class="who">${esc(v.channel_title)}</span><span>${esc(when(v.published))}</span></p>
@@ -212,7 +214,7 @@ function renderVideos() {
   const bar = app.tab === 'new'
     ? '<div class="bar"><button type="button" class="quiet" data-act="all-seen">Tout marquer comme vu</button></div>'
     : '';
-  view.innerHTML = `${bar}<ul class="feed">${app.videos.map((v) => videoRow(v, thumbs)).join('')}</ul>`;
+  view.innerHTML = `${bar}<ul class="feed${thumbs ? ' cards' : ''}">${app.videos.map((v) => videoRow(v, thumbs)).join('')}</ul>`;
 }
 
 function renderChannels() {

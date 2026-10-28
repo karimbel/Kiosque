@@ -206,13 +206,29 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
   padding: 18px 0;
   border-bottom: 1px solid var(--line);
 }
-.item.has-thumb { grid-template-columns: 168px 1fr; }
+/* Avec miniatures : cartes, image 16/9 au-dessus du titre. */
+.feed.cards {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 28px clamp(18px, 2.4vw, 36px);
+  padding-top: 18px;
+}
+.feed.cards .item { padding: 0 0 18px; border-bottom: 0; gap: 12px; }
 
+.thumb-btn {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--line);
+}
+.thumb-btn:hover:not(:disabled) { border: 0; filter: brightness(1.06); }
 .thumb {
-  width: 168px;
+  display: block;
+  width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
-  border-radius: 6px;
   background: var(--line);
 }
 
@@ -369,8 +385,6 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
   .brand img { width: 56px; height: 56px; }
   .brand h1 { font-size: 28px; }
   .tagline { font-size: 13px; }
-  .item.has-thumb { grid-template-columns: 1fr; }
-  .thumb { width: 100%; }
   .player-bar { flex-wrap: wrap; gap: 8px 12px; }
   .player-info { flex-basis: 100%; order: 3; }
 }
