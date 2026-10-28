@@ -72,12 +72,18 @@ pub fn enabled_platforms(setting: &str) -> Vec<Platform> {
     let mut list = vec![Platform::YouTube];
     for key in setting.split(',') {
         if let Some(p) = Platform::from_key(key.trim()) {
-            if !list.contains(&p) {
+            if !list.contains(&p) && !unavailable(p) {
                 list.push(p);
             }
         }
     }
     list
+}
+
+/// Plateformes mises de côté : le code reste, mais elles ne peuvent pas être activées.
+/// Dailymotion : son lecteur refuse l'intégration pour la plupart des vidéos.
+pub fn unavailable(platform: Platform) -> bool {
+    platform == Platform::Dailymotion
 }
 
 /// Nettoie une liste de plateformes reçue de l'interface (clés connues, dédoublonnées).
@@ -610,6 +616,8 @@ mod tests {
         let l = enabled_platforms("vimeo, peertube,inconnue");
         assert_eq!(l, vec![Platform::YouTube, Platform::Vimeo, Platform::PeerTube]);
         assert_eq!(enabled_platforms(""), vec![Platform::YouTube]);
+        // Dailymotion est mise de côté : elle ne peut pas être activée.
+        assert_eq!(enabled_platforms("dailymotion"), vec![Platform::YouTube]);
         assert_eq!(normalize_platforms("youtube,odysee,odysee,nimporte"), "odysee");
     }
 

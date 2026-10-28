@@ -39,6 +39,13 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
     // Une autre plateforme que YouTube ? Elle doit avoir été activée dans les réglages.
     if let Some(found) = providers::detect(&input)? {
         let active = providers::enabled_platforms(&state.db.get_setting("platforms")?.unwrap_or_default());
+        if providers::unavailable(found.platform) {
+            let name = found.platform.label();
+            return Err(tr!(
+                "{name} n'est pas encore disponible dans Kiosque.",
+                "{name} is not available in Kiosque yet."
+            ));
+        }
         if !active.contains(&found.platform) {
             let name = found.platform.label();
             return Err(tr!(

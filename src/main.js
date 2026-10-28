@@ -670,7 +670,10 @@ const PLATFORMS = [
 ];
 const platformDesc = (text) => t(text);
 const platformLabel = (key) => (key === 'youtube' ? 'YouTube' : PLATFORMS.find((p) => p[0] === key)?.[1] ?? '');
-const activePlatforms = () => (app.settings.platforms || '').split(',').filter(Boolean);
+// Plateformes mises de côté : le code reste en place, mais l'option est désactivée et ne peut pas être cochée.
+// Dailymotion : le lecteur refuse d'être intégré à Kiosque pour la plupart des vidéos.
+const UNAVAILABLE = ['dailymotion'];
+const activePlatforms = () => (app.settings.platforms || '').split(',').filter((k) => k && !UNAVAILABLE.includes(k));
 
 const PLAYER_HINTS = {
   inapp: 'Lecteur de YouTube dans la fenêtre. Des publicités peuvent s’afficher.',
@@ -715,7 +718,9 @@ function renderChannels() {
   const panels = {
     platforms: `
       ${toggle('pf-youtube', 'YouTube', t('Toujours actif (par défaut).'), 'disabled', true)}
-      ${PLATFORMS.map(([key, label, help]) => toggle('pf-' + key, label, t(help), `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
+      ${PLATFORMS.map(([key, label, help]) => UNAVAILABLE.includes(key)
+        ? toggle('pf-' + key, label, t('Bientôt disponible.'), 'disabled', false)
+        : toggle('pf-' + key, label, t(help), `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
       <p class="hint">${t('Colle ensuite l’adresse d’une chaîne ou d’une vidéo de la plateforme dans « Suivre ».')}</p>`,
     playback: `
       <div class="segmented" role="radiogroup" aria-label="${t('Lecteur vidéo')}">
