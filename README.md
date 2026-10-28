@@ -15,9 +15,20 @@ Application de bureau en Rust avec [Tauri 2](https://v2.tauri.app/). Aucun compt
 
 Les aperçus montrent des chaînes d'exemple, dont les miniatures sont des dégradés de remplacement. L'interface suit le thème de ton système, et la barre du haut se réduit avec la flèche à droite.
 
-## Obtenir l'application (GitHub)
+## Télécharger
 
-Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur Windows sur les serveurs de GitHub : rien à installer ni à compiler chez toi, et aucun Go de plus sur ton disque.
+Dans l'onglet **Releases** du dépôt, deux fichiers Windows, toujours numérotés avec la version :
+
+| Fichier | Pour qui |
+| --- | --- |
+| `Kiosque_X.Y.Z_portable.exe` | **Version portable** : aucune installation, tu le lances d'un double-clic et tu peux le garder sur une clé USB. |
+| `Kiosque_X.Y.Z_x64-setup.exe` | Installeur : ajoute Kiosque au menu Démarrer et se désinstalle comme un programme normal. |
+
+Les deux ne sont pas signés : au premier lancement, Windows (SmartScreen) affiche un avertissement. Clique sur « Informations complémentaires », puis « Exécuter quand même ». La version portable utilise WebView2, déjà présent sur Windows 10 et 11.
+
+## Construire les fichiers (GitHub)
+
+Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur et la version portable pour Windows sur les serveurs de GitHub : rien à installer ni à compiler chez toi, et aucun Go de plus sur ton disque.
 
 1. Crée un dépôt vide sur github.com (sans README), puis, dans PowerShell, dans le dossier du projet :
    ```
