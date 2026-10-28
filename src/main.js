@@ -1044,6 +1044,40 @@ async function applyLanguage() {
 
 // ---------- démarrage ----------
 
+/** Téléchargement, installation et relance dans Kiosque, avec la progression dans la bannière. */
+async function runInstall(version) {
+  const box = document.querySelector('#update');
+  const text = document.querySelector('#update-text');
+  const bar = document.querySelector('#update-bar');
+  const showing = (percent) => {
+    text.textContent = percent == null
+      ? t('Mise à jour vers Kiosque {v} en cours…', { v: version })
+      : t('Téléchargement de Kiosque {v} : {p} %', { v: version, p: percent });
+  };
+  showing(null);
+  bar.value = 0;
+  bar.hidden = false;
+  box.hidden = false;
+  box.classList.add('busy');
+  let stop = () => {};
+  try {
+    const off = await window.__TAURI__.event.listen('update-progress', (e) => {
+      bar.value = e.payload;
+      showing(e.payload);
+    });
+    stop = off;
+  } catch { /* sans événements, le texte « en cours » reste affiché */ }
+  try {
+    await invoke('install_update'); // relance Kiosque : on ne revient normalement pas ici
+  } catch (err) {
+    stop();
+    bar.hidden = true;
+    box.classList.remove('busy');
+    text.textContent = t('Kiosque {v} est disponible.', { v: version });
+    setStatus(t('Mise à jour impossible : {err}', { err }), 'error');
+  }
+}
+
 async function checkUpdate() {
   try {
     const info = await invoke('check_update');
@@ -1052,16 +1086,7 @@ async function checkUpdate() {
     const text = document.querySelector('#update-text');
     box.dataset.version = info.version;
     if (app.settings.auto_update === '1') {
-      text.textContent = t('Mise à jour vers Kiosque {v} en cours…', { v: info.version });
-      box.classList.add('busy');
-      box.hidden = false;
-      try {
-        await invoke('install_update'); // relance Kiosque : on ne revient normalement pas ici
-      } catch (err) {
-        box.classList.remove('busy');
-        text.textContent = t('Kiosque {v} est disponible.', { v: info.version });
-        setStatus(t('Mise à jour impossible : {err}', { err }), 'error');
-      }
+      await runInstall(info.version);
       return;
     }
     try { if (localStorage.getItem('update-dismissed') === info.version) return; } catch { /* facultatif */ }
@@ -1074,19 +1099,7 @@ document.querySelector('#update').addEventListener('click', async (event) => {
   const button = event.target.closest('[data-update]');
   if (!button) return;
   if (button.dataset.update === 'open') {
-    // Mise à jour dans Kiosque : téléchargement, installation et relance, sans passer par le navigateur.
-    const box = document.querySelector('#update');
-    const text = document.querySelector('#update-text');
-    const version = box.dataset.version;
-    text.textContent = t('Mise à jour vers Kiosque {v} en cours…', { v: version });
-    box.classList.add('busy');
-    try {
-      await invoke('install_update'); // relance Kiosque : on ne revient normalement pas ici
-    } catch (err) {
-      box.classList.remove('busy');
-      text.textContent = t('Kiosque {v} est disponible.', { v: version });
-      setStatus(t('Mise à jour impossible : {err}', { err }), 'error');
-    }
+    await runInstall(document.querySelector('#update').dataset.version);
     return;
   }
   try { localStorage.setItem('update-dismissed', document.querySelector('#update').dataset.version); } catch { /* facultatif */ }

@@ -10,7 +10,7 @@ use futures::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 
@@ -343,7 +343,8 @@ fn pick_asset(assets: &[(String, String)], portable: bool) -> Option<&str> {
     assets
         .iter()
         .find(|(name, url)| {
-            name.ends_with(suffix) && url.starts_with("https://github.com/karimbel/kiosque/releases/download/")
+            name.ends_with(suffix)
+                && url.to_ascii_lowercase().starts_with("https://github.com/karimbel/kiosque/releases/download/")
         })
         .map(|(_, url)| url.as_str())
 }
@@ -394,15 +395,29 @@ async fn install_update_inner(app: &AppHandle, state: &AppState) -> Result<(), S
         .build()
         .map_err(|err| err.to_string())?;
     log_update(app, &format!("téléchargement : {url}"));
-    let bytes = http
+    let mut response = http
         .get(&url)
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|err| tr!("Téléchargement impossible ({err}).", "Download failed ({err})."))?
-        .bytes()
+        .map_err(|err| tr!("Téléchargement impossible ({err}).", "Download failed ({err})."))?;
+    let total = response.content_length().unwrap_or(0);
+    let mut bytes: Vec<u8> = Vec::with_capacity(total as usize);
+    let mut last = 101u64;
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|err| tr!("Téléchargement interrompu ({err}).", "Download interrupted ({err})."))?;
+        .map_err(|err| tr!("Téléchargement interrompu ({err}).", "Download interrupted ({err})."))?
+    {
+        bytes.extend_from_slice(&chunk);
+        if total > 0 {
+            let percent = (bytes.len() as u64 * 100 / total).min(100);
+            if percent != last {
+                last = percent;
+                let _ = app.emit("update-progress", percent);
+            }
+        }
+    }
     if bytes.len() < 1_000_000 || &bytes[..2] != b"MZ" {
         return Err(tr!("Le fichier téléchargé n'est pas valide.", "The downloaded file is not valid."));
     }
@@ -548,5 +563,8 @@ mod tests {
         assert!(pick_asset(&assets, false).unwrap().ends_with("_x64-setup.exe"));
         assert!(pick_asset(&assets, true).unwrap().ends_with("0.1.6_portable.exe"));
         assert_eq!(pick_asset(&assets[2..], true), None);
+        // GitHub renvoie le nom du dépôt avec sa casse d'origine (« Kiosque »).
+        let real = vec![("Kiosque_0.1.9_portable.exe".to_string(), "https://github.com/karimbel/Kiosque/releases/download/v0.1.9/Kiosque_0.1.9_portable.exe".to_string())];
+        assert!(pick_asset(&real, true).is_some());
     }
 }

@@ -69,6 +69,7 @@ const EN = {
   'Les autres dossiers et plateformes ont encore des vidéos.': 'Other folders and platforms still have videos.',
   'Tout afficher': 'Show all',
   'Tout': 'All',
+  'Téléchargement de Kiosque {v} : {p} %': 'Downloading Kiosque {v}: {p}%',
   'Ouvrir le dépôt GitHub': 'Open the GitHub repository',
   'Filtres': 'Filters',
   'Tous': 'All',
