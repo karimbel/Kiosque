@@ -520,25 +520,28 @@ function videoRow(v, thumbs, latest = false) {
     ${thumbs ? `<button type="button" class="thumb-btn" data-act="watch" tabindex="-1" aria-hidden="true"><img class="thumb" src="${esc(src)}" alt="" loading="lazy" onerror="this.closest('.thumb-btn').remove()"></button>` : ''}
     <div>
       <h3 class="title" title="${esc(v.title)}">${esc(shortTitle(v.title))}</h3>
-      <p class="meta"><span class="who">${esc(v.channel_title)}</span>${platformLabel(v.platform) ? `<span class="pf">${esc(platformLabel(v.platform))}</span>` : ''}<span>${esc(when(v.published))}</span></p>
+      <p class="meta"><span class="who">${esc(v.channel_title)}</span>${platformLabel(v.platform) ? `<span class="pf">${esc(platformLabel(v.platform))}</span>` : ''}${v.category ? `<span class="fo">${esc(v.category)}</span>` : ''}<span>${esc(when(v.published))}</span></p>
       <div class="actions">${latest ? `<button type="button" class="primary" data-act="watch">${t('Regarder')}</button>` : actionsFor(app.tab)}</div>
     </div>
   </li>`;
 }
 
-// ---------- dossiers ----------
+// ---------- filtres (plateformes et dossiers) ----------
+
+const NO_FOLDER = '\u0000none';
+const folderOf = (v) => v.category || '';
 
 const folderNames = () =>
   [...new Set(app.channels.map((c) => c.category).filter(Boolean))].sort((x, y) => x.localeCompare(y, lang));
 
 function currentFolder() {
-  if (app.folder && !folderNames().includes(app.folder)) setFolder('');
+  if (app.folder && app.folder !== NO_FOLDER && !folderNames().includes(app.folder)) setFolder('');
   return app.folder;
 }
 
 function setFolder(name) {
   app.folder = name;
-  try { localStorage.setItem('folder', name); } catch { /* sans mémoire, le filtre repart de « Tous » */ }
+  try { localStorage.setItem('folder', name); } catch { /* sans mémoire, le filtre repart de « Tout » */ }
 }
 
 const platformsPresent = () => {
@@ -553,36 +556,42 @@ function currentPlatform() {
 
 function setPlatform(key) {
   app.platform = key;
-  try { localStorage.setItem('platform', key); } catch { /* sans mémoire, le filtre repart de « Toutes » */ }
+  try { localStorage.setItem('platform', key); } catch { /* sans mémoire, le filtre repart de « Tout » */ }
 }
 
-const inFolder = (v) => !currentFolder() || v.category === currentFolder();
+const inFolder = (v) => !currentFolder() || (currentFolder() === NO_FOLDER ? !folderOf(v) : folderOf(v) === currentFolder());
 const inPlatform = (v) => !currentPlatform() || v.platform === currentPlatform();
 const visible = (v) => inFolder(v) && inPlatform(v);
 const filtering = () => !!(currentFolder() || currentPlatform());
 
-/** Filtres au-dessus de la liste : dossiers et plateformes (chacun compte ce que l'autre laisse passer). */
+/**
+ * Sous-navbar de filtres : Tout | plateformes (activées et non vides) | dossiers (non vides).
+ * Les deux familles se combinent ; chacune compte ce que l'autre laisse passer.
+ */
 function filterBars(items) {
-  const chip = (act, attr, value, label, count, active) =>
-    `<button type="button" class="chip" data-act="${act}" data-${attr}="${esc(value)}" aria-pressed="${active}">${esc(label)}<span class="chip-count">${count}</span></button>`;
-  let html = '';
-  const names = folderNames();
-  if (names.length) {
-    const active = currentFolder();
-    const base = items.filter(inPlatform);
-    html += `<div class="folders" role="group" aria-label="${t('Dossiers')}">${chip('folder', 'folder', '', t('Tous'), base.length, active === '')}${names
-      .map((n) => chip('folder', 'folder', n, n, base.filter((v) => v.category === n).length, active === n))
-      .join('')}</div>`;
+  const chip = (cls, act, attr, value, label, count, active) =>
+    `<button type="button" class="chip ${cls}" data-act="${act}"${attr ? ` data-${attr}="${esc(value)}"` : ''} aria-pressed="${active}" data-count="${count}">${esc(label)}<span class="chip-count">${count}</span></button>`;
+  const enabled = new Set(['youtube', ...activePlatforms()]);
+  const pfKeys = ['youtube', ...PLATFORMS.map((p) => p[0])].filter((k) => enabled.has(k) && items.some((v) => v.platform === k));
+  const folders = [...new Set(items.map(folderOf))]
+    .sort((x, y) => (x === '' ? 1 : y === '' ? -1 : x.localeCompare(y, lang)));
+  if (pfKeys.length < 2 && folders.length < 2) return '';
+  const pf = currentPlatform();
+  const fo = currentFolder();
+  const byFolder = items.filter(inFolder);
+  const byPlatform = items.filter(inPlatform);
+  const parts = [chip('', 'reset-filters', '', '', t('Tout'), items.length, !pf && !fo)];
+  if (pfKeys.length > 1) {
+    parts.push(...pfKeys.map((k) =>
+      chip('pf-chip', 'platform', 'platform', pf === k ? '' : k, platformLabel(k), byFolder.filter((v) => v.platform === k).length, pf === k)));
   }
-  const keys = platformsPresent();
-  if (keys.length > 1) {
-    const active = currentPlatform();
-    const base = items.filter(inFolder);
-    html += `<div class="folders" role="group" aria-label="${t('Plateformes')}">${chip('platform', 'platform', '', t('Toutes'), base.length, active === '')}${keys
-      .map((k) => chip('platform', 'platform', k, platformLabel(k), base.filter((v) => v.platform === k).length, active === k))
-      .join('')}</div>`;
+  if (folders.length > 1) {
+    parts.push(...folders.map((n) => {
+      const key = n === '' ? NO_FOLDER : n;
+      return chip('fo-chip', 'folder', 'folder', fo === key ? '' : key, n || t('Sans dossier'), byPlatform.filter((v) => folderOf(v) === n).length, fo === key);
+    }));
   }
-  return html;
+  return `<div class="filterbar" role="group" aria-label="${t('Filtres')}"><div class="filterbar-in">${parts.join('')}</div></div>`;
 }
 
 function renderVideos() {
@@ -592,11 +601,10 @@ function renderVideos() {
     const latest = latestAll.length
       ? `<section class="latest" aria-labelledby="latest-title">
           <h2 id="latest-title">${t('Dernières vidéos de tes chaînes')}</h2>
-          ${filterBars(latestAll)}
           <ul class="feed${thumbs ? ' cards' : ''}">${latestAll.filter(visible).map((v) => videoRow(v, thumbs, true)).join('')}</ul>
         </section>`
       : '';
-    view.innerHTML = emptyState() + latest;
+    view.innerHTML = (latestAll.length ? filterBars(latestAll) : '') + emptyState() + latest;
     return;
   }
   const shown = app.videos.filter(visible);
@@ -723,7 +731,7 @@ function renderChannels() {
             ${SUBS.map(([k, label]) => `<button type="button" role="tab" id="sub-${k}" data-sub="${k}" aria-selected="${app.sub === k}" tabindex="${app.sub === k ? 0 : -1}">${label}</button>`).join('')}
           </div>
           <div class="subpanel" role="tabpanel" aria-labelledby="sub-${app.sub}">${panels[app.sub]}</div>
-          ${app.version ? `<p class="version">Kiosque ${esc(app.version)}</p>` : ''}
+          ${app.version ? `<p class="version"><a href="https://github.com/karimbel/Kiosque" data-act="open-repo" title="${t('Ouvrir le dépôt GitHub')}">Kiosque ${esc(app.version)}</a></p>` : ''}
         </aside>
       </div>
     </div>`;
@@ -833,6 +841,9 @@ view.addEventListener('click', async (event) => {
       case 'platform':
         setPlatform(button.dataset.platform);
         return renderVideos();
+      case 'open-repo':
+        event.preventDefault();
+        return await invoke('open_repo');
       case 'reset-filters':
         setFolder('');
         setPlatform('');

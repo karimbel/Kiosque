@@ -449,6 +449,12 @@ fn open_release() -> Result<(), String> {
     open::that(RELEASES_PAGE).map_err(|err| tr!("Impossible d'ouvrir le navigateur : {err}", "Could not open the browser: {err}"))
 }
 
+/// Ouvre le dépôt GitHub du projet dans le navigateur.
+#[tauri::command]
+fn open_repo() -> Result<(), String> {
+    open::that("https://github.com/karimbel/Kiosque").map_err(|err| tr!("Impossible d'ouvrir le navigateur : {err}", "Could not open the browser: {err}"))
+}
+
 /// Langue des messages du programme : l'interface l'envoie au démarrage et à chaque changement.
 #[tauri::command]
 fn set_language(code: String) {
@@ -510,6 +516,7 @@ pub fn run() {
             set_language,
             install_update,
             open_release,
+            open_repo,
             get_autostart,
             set_autostart,
         ])
