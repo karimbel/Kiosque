@@ -107,3 +107,5 @@ Les tests couvrent le parsing des flux, la résolution des adresses et la base d
 ## Pistes pour la suite
 
 Règles par chaîne (digest hebdomadaire, durée minimale), filtres de mots-clés, budget de temps quotidien, import de tes abonnements (OPML ou export Google Takeout), connexion OAuth pour les likes et commentaires (optionnelle).
+
+<!-- Version de test de la mise à jour interne (0.2.2). -->
