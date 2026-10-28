@@ -273,7 +273,7 @@ pub fn embed_url(video_id: &str) -> Option<String> {
         Platform::Dailymotion => Some(format!("https://www.dailymotion.com/embed/video/{rest}?autoplay=1")),
         Platform::Odysee => {
             let (slug, short) = rest.rsplit_once(':')?;
-            Some(format!("https://odysee.com/$/embed/{slug}/{short}?autoplay=true"))
+            Some(format!("https://odysee.com/$/embed/{slug}/{short}"))
         }
     }
 }
@@ -630,7 +630,7 @@ mod tests {
         );
         assert_eq!(embed_url("vi:123456").as_deref(), Some("https://player.vimeo.com/video/123456?autoplay=1"));
         assert_eq!(embed_url("dm:x8abc").as_deref(), Some("https://www.dailymotion.com/embed/video/x8abc?autoplay=1"));
-        assert_eq!(embed_url("od:ma-video:a1b2").as_deref(), Some("https://odysee.com/$/embed/ma-video/a1b2?autoplay=true"));
+        assert_eq!(embed_url("od:ma-video:a1b2").as_deref(), Some("https://odysee.com/$/embed/ma-video/a1b2"));
         assert_eq!(watch_url("dQw4w9WgXcQ", None), "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
         assert_eq!(watch_url("vi:1", Some("https://vimeo.com/1")), "https://vimeo.com/1");
     }

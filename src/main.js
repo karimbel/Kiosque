@@ -1140,7 +1140,8 @@ async function checkUpdate() {
     const box = document.querySelector('#update');
     const text = document.querySelector('#update-text');
     box.dataset.version = info.version;
-    if (app.settings.auto_update === '1') {
+    app.selfUpdate = await invoke('can_self_update').catch(() => true);
+    if (app.settings.auto_update === '1' && app.selfUpdate) {
       await runInstall(info.version);
       return;
     }
@@ -1154,6 +1155,11 @@ document.querySelector('#update').addEventListener('click', async (event) => {
   const button = event.target.closest('[data-update]');
   if (!button) return;
   if (button.dataset.update === 'open') {
+    if (app.selfUpdate === false) {
+      // macOS et Linux : pas encore d'installation dans Kiosque, on ouvre la page de la release.
+      try { await invoke('open_release'); } catch (err) { setStatus(String(err), 'error'); }
+      return;
+    }
     await runInstall(document.querySelector('#update').dataset.version);
     return;
   }

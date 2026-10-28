@@ -497,6 +497,13 @@ async fn install_update_inner(app: &AppHandle, state: &AppState) -> Result<(), S
     Ok(())
 }
 
+/// La mise à jour dans Kiosque (téléchargement, installation, relance) n'existe que sous Windows pour l'instant ;
+/// ailleurs, le bouton ouvre la page de la release.
+#[tauri::command]
+fn can_self_update() -> bool {
+    cfg!(windows)
+}
+
 /// Version de Kiosque en cours d'utilisation.
 #[tauri::command]
 fn app_version() -> String {
@@ -577,6 +584,7 @@ pub fn run() {
             set_language,
             install_update,
             open_release,
+            can_self_update,
             open_repo,
             get_autostart,
             set_autostart,

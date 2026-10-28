@@ -46,7 +46,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: "Kiosque v__VERSION__"
-          releaseBody: "Dans la liste « Assets » : Kiosque_…_x64-setup.exe (installation) ou Kiosque_…_portable.exe (aucune installation, il suffit de le lancer)."
+          releaseBody: "Dans la liste « Assets » — Windows : Kiosque_…_x64-setup.exe (installation) ou Kiosque_…_portable.exe (aucune installation). macOS : Kiosque_…_universal.dmg. Linux : Kiosque_….AppImage ou .deb."
           releaseDraft: false
           prerelease: false
           args: --bundles nsis
@@ -61,3 +61,60 @@ jobs:
           FICHIER="Kiosque_${VERSION}_portable.exe"
           cp src-tauri/target/release/kiosque.exe "$FICHIER"
           gh release upload "v${VERSION}" "$FICHIER" --clobber --repo "${{ github.repository }}"
+
+  # macOS et Linux : construits après Windows (la release existe alors déjà, les fichiers s'y ajoutent).
+  installeurs-macos-linux:
+    needs: installeur-windows
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nom: macOS
+            os: macos-latest
+            cibles: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --bundles dmg
+          - nom: Linux
+            os: ubuntu-22.04
+            cibles: ""
+            args: --bundles appimage,deb
+    name: ${{ matrix.nom }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer les bibliothèques Linux
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.cibles }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Installer les outils JavaScript
+        run: npm install
+
+      - name: Régénérer les icônes à partir du logo
+        run: npx tauri icon app-icon.png
+
+      # macOS : signature « ad hoc » (sans compte développeur). Sans elle, les Mac récents refusent d'ouvrir le programme.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos-latest' && '-' || '' }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "Kiosque v__VERSION__"
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
