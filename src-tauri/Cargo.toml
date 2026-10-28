@@ -1,6 +1,6 @@
 [package]
 name = "kiosque"
-version = "0.1.7"
+version = "0.1.8"
 description = "Un lecteur de chaînes YouTube qui se termine"
 edition = "2021"
 
@@ -24,6 +24,7 @@ chrono = { version = "0.4", default-features = false }
 rusqlite = { version = "0.32", features = ["bundled"] }
 open = "5"
 tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
 
 [profile.release]
 lto = true

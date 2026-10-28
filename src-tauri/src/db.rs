@@ -18,7 +18,7 @@ const BACKLOG_SECS: i64 = 7 * 86_400;
 type R<T> = Result<T, String>;
 
 fn db_err(err: rusqlite::Error) -> String {
-    format!("Base de données : {err}")
+    crate::tr!("Base de données : {err}", "Database: {err}")
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -327,7 +327,7 @@ impl Db {
 
     pub fn set_state(&self, id: &str, state: &str) -> R<()> {
         if !STATES.contains(&state) {
-            return Err(format!("État inconnu : {state}"));
+            return Err(crate::tr!("État inconnu : {state}", "Unknown state: {state}"));
         }
         self.lock()
             .execute("UPDATE videos SET state = ?1 WHERE id = ?2", params![state, id])

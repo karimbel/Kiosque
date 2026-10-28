@@ -742,3 +742,7 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 
 .addbar { transition: box-shadow 0.2s ease; }
 #view.scrolled .addbar { box-shadow: 0 8px 14px -8px rgb(0 0 0 / 0.35); }
+
+.segmented.three { grid-template-columns: repeat(3, 1fr); }
+.field { margin-bottom: 14px; }
+.field .switch-label { display: block; margin-bottom: 8px; }

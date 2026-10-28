@@ -184,7 +184,7 @@ pub fn detect(input: &str) -> Result<Option<Detected>, String> {
                     kind: Kind::Channel(format!("od:{first}")),
                 }))
             } else {
-                Err("Pour Odysee, colle l'adresse de la chaîne (odysee.com/@nom).".into())
+                Err(crate::tr!("Pour Odysee, colle l'adresse de la chaîne (odysee.com/@nom).", "For Odysee, paste the channel address (odysee.com/@name)."))
             }
         }
 
@@ -205,7 +205,7 @@ pub fn detect(input: &str) -> Result<Option<Detected>, String> {
                     kind: Kind::Channel(format!("vi:{first}")),
                 }))
             } else {
-                Err("Pour Vimeo, colle l'adresse du profil ou de la chaîne (vimeo.com/nom).".into())
+                Err(crate::tr!("Pour Vimeo, colle l'adresse du profil ou de la chaîne (vimeo.com/nom).", "For Vimeo, paste the profile or channel address (vimeo.com/name)."))
             }
         }
 
@@ -223,7 +223,7 @@ pub fn detect(input: &str) -> Result<Option<Detected>, String> {
                     kind: Kind::Channel(format!("dm:{name}")),
                 }))
             } else {
-                Err("Pour Dailymotion, colle l'adresse de la chaîne (dailymotion.com/nom).".into())
+                Err(crate::tr!("Pour Dailymotion, colle l'adresse de la chaîne (dailymotion.com/nom).", "For Dailymotion, paste the channel address (dailymotion.com/name)."))
             }
         }
 
@@ -312,16 +312,16 @@ async fn get_text(http: &reqwest::Client, url: &str) -> Result<String, String> {
         .get(url)
         .send()
         .await
-        .map_err(|err| format!("connexion impossible ({err})"))?;
+        .map_err(|err| crate::tr!("connexion impossible ({err})", "connection failed ({err})"))?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status().as_u16()));
     }
-    resp.text().await.map_err(|err| format!("lecture interrompue ({err})"))
+    resp.text().await.map_err(|err| crate::tr!("lecture interrompue ({err})", "read interrupted ({err})"))
 }
 
 async fn get_json(http: &reqwest::Client, url: &str) -> Result<Value, String> {
     let text = get_text(http, url).await?;
-    serde_json::from_str(&text).map_err(|err| format!("réponse illisible ({err})"))
+    serde_json::from_str(&text).map_err(|err| crate::tr!("réponse illisible ({err})", "unreadable response ({err})"))
 }
 
 pub fn parse_peertube_videos(json: &Value, host: &str) -> Vec<ParsedVideo> {
@@ -357,7 +357,7 @@ async fn fetch_peertube(http: &reqwest::Client, id: &str) -> Result<Fetched, Str
     let (name, host) = id
         .get(3..)
         .and_then(|rest| rest.rsplit_once('@'))
-        .ok_or("identifiant PeerTube invalide")?;
+        .ok_or_else(|| crate::tr!("identifiant PeerTube invalide", "invalid PeerTube identifier"))?;
     let channel = get_json(http, &format!("https://{host}/api/v1/video-channels/{name}")).await?;
     let videos = get_json(
         http,
@@ -416,7 +416,7 @@ async fn fetch_dailymotion(http: &reqwest::Client, id: &str) -> Result<Fetched, 
 /// Lit un flux RSS/Atom et en tire des vidéos : `extract` transforme l'adresse d'une entrée
 /// en identifiant de vidéo (ou l'écarte).
 fn parse_rss(bytes: &[u8], extract: impl Fn(&str) -> Option<String>) -> Result<Fetched, String> {
-    let feed = parser::parse(bytes).map_err(|err| format!("flux illisible ({err})"))?;
+    let feed = parser::parse(bytes).map_err(|err| crate::tr!("flux illisible ({err})", "unreadable feed ({err})"))?;
     let mut videos = Vec::new();
     for entry in feed.entries {
         let Some(link) = entry.links.first().map(|l| l.href.clone()) else { continue };
@@ -506,7 +506,7 @@ pub async fn channel_of_video(http: &reqwest::Client, kind: &Kind) -> Result<Str
         Kind::PeerTubeVideo { host, uuid } => peertube_channel_of_video(http, host, uuid).await,
         Kind::DailymotionVideo(id) => {
             let video = get_json(http, &format!("https://api.dailymotion.com/video/{id}?fields=owner.username")).await?;
-            let name = video["owner.username"].as_str().filter(|n| valid_name(n)).ok_or("chaîne introuvable")?;
+            let name = video["owner.username"].as_str().filter(|n| valid_name(n)).ok_or_else(|| crate::tr!("chaîne introuvable", "channel not found"))?;
             Ok(format!("dm:{name}"))
         }
         Kind::VimeoVideo(id) => {
@@ -516,7 +516,7 @@ pub async fn channel_of_video(http: &reqwest::Client, kind: &Kind) -> Result<Str
             if valid_name(name) && !name.is_empty() {
                 Ok(format!("vi:{name}"))
             } else {
-                Err("chaîne introuvable".into())
+                Err(crate::tr!("chaîne introuvable", "channel not found"))
             }
         }
     }
@@ -524,7 +524,7 @@ pub async fn channel_of_video(http: &reqwest::Client, kind: &Kind) -> Result<Str
 
 pub async fn peertube_channel_of_video(http: &reqwest::Client, host: &str, uuid: &str) -> Result<String, String> {
     let video = get_json(http, &format!("https://{host}/api/v1/videos/{uuid}")).await?;
-    let name = video["channel"]["name"].as_str().ok_or("chaîne introuvable")?;
+    let name = video["channel"]["name"].as_str().ok_or_else(|| crate::tr!("chaîne introuvable", "channel not found"))?;
     let chan_host = video["channel"]["host"].as_str().unwrap_or(host);
     // Une chaîne distante est lue depuis l'instance où elle vit ; sinon depuis celle de l'adresse.
     Ok(format!("pt:{name}@{}", if chan_host.is_empty() { host } else { chan_host }.to_lowercase()))

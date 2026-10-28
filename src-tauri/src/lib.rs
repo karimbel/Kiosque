@@ -1,5 +1,6 @@
 mod db;
 mod feed;
+mod i18n;
 mod providers;
 mod resolve;
 
@@ -11,6 +12,7 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_notification::NotificationExt;
 
 struct AppState {
     db: Db,
@@ -39,19 +41,20 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
         let active = providers::enabled_platforms(&state.db.get_setting("platforms")?.unwrap_or_default());
         if !active.contains(&found.platform) {
             let name = found.platform.label();
-            return Err(format!(
-                "Cette adresse est une chaîne {name}. Active {name} dans Chaînes → Plateformes pour la suivre."
+            return Err(tr!(
+                "Cette adresse est une chaîne {name}. Active {name} dans Chaînes → Plateformes pour la suivre.",
+                "This address is a {name} channel. Turn {name} on in Channels → Platforms to follow it."
             ));
         }
         let id = providers::channel_of_video(&state.http, &found.kind)
             .await
-            .map_err(|err| format!("Impossible de retrouver la chaîne de cette vidéo ({err})."))?;
+            .map_err(|err| tr!("Impossible de retrouver la chaîne de cette vidéo ({err}).", "Could not find this video's channel ({err})."))?;
         return add_other_channel(&state, id).await;
     }
     let id = resolve::resolve_channel_id(&state.http, &input).await?;
     let meta = feed::fetch_channel_feed(&state.http, &id)
         .await
-        .map_err(|err| format!("Le flux de cette chaîne est inaccessible ({err}). Vérifie l'adresse."))?;
+        .map_err(|err| tr!("Le flux de cette chaîne est inaccessible ({err}). Vérifie l'adresse.", "This channel's feed is unreachable ({err}). Check the address."))?;
     let title = if meta.title.trim().is_empty() {
         id.clone()
     } else {
@@ -76,14 +79,14 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
         .list_channels()?
         .into_iter()
         .find(|c| c.id == id)
-        .ok_or_else(|| "La chaîne est introuvable après son ajout.".to_string())
+        .ok_or_else(|| tr!("La chaîne est introuvable après son ajout.", "The channel could not be found after adding it."))
 }
 
 /// Ajoute une chaîne PeerTube, Odysee, Vimeo ou Dailymotion.
 async fn add_other_channel(state: &AppState, id: String) -> Result<Channel, String> {
     let fetched = providers::fetch(&state.http, &id)
         .await
-        .map_err(|err| format!("Cette chaîne est inaccessible ({err}). Vérifie l'adresse."))?;
+        .map_err(|err| tr!("Cette chaîne est inaccessible ({err}). Vérifie l'adresse.", "This channel is unreachable ({err}). Check the address."))?;
     if state.db.add_channel(&id, &fetched.title, now())? {
         state.db.upsert_videos(&id, &fetched.videos, true, now())?;
         state.db.set_profile(
@@ -98,7 +101,7 @@ async fn add_other_channel(state: &AppState, id: String) -> Result<Channel, Stri
         .list_channels()?
         .into_iter()
         .find(|c| c.id == id)
-        .ok_or_else(|| "La chaîne est introuvable après son ajout.".to_string())
+        .ok_or_else(|| tr!("La chaîne est introuvable après son ajout.", "The channel could not be found after adding it."))
 }
 
 #[tauri::command]
@@ -206,19 +209,25 @@ fn mark_all_seen(state: State<'_, AppState>) -> Result<usize, String> {
 #[tauri::command]
 fn open_video(id: String, state: State<'_, AppState>) -> Result<(), String> {
     if providers::platform_of(&id) == Platform::YouTube && !feed::is_video_id(&id) {
-        return Err("Identifiant de vidéo invalide.".into());
+        return Err(tr!("Identifiant de vidéo invalide.", "Invalid video ID."));
     }
     let url = state.db.video_page(&id)?;
     if !url.starts_with("https://") {
-        return Err("Adresse de la vidéo introuvable.".into());
+        return Err(tr!("Adresse de la vidéo introuvable.", "Video address not found."));
     }
-    open::that(&url).map_err(|err| format!("Impossible d'ouvrir le navigateur : {err}"))?;
+    open::that(&url).map_err(|err| tr!("Impossible d'ouvrir le navigateur : {err}", "Could not open the browser: {err}"))?;
     state.db.set_state(&id, "seen")
 }
 
 // ---------- réglages ----------
 
-const SETTINGS: [(&str, &str); 4] = [("player", "inapp"), ("exclude_shorts", "1"), ("platforms", ""), ("auto_update", "0")];
+const SETTINGS: [(&str, &str); 5] = [
+    ("player", "inapp"),
+    ("exclude_shorts", "1"),
+    ("platforms", ""),
+    ("auto_update", "0"),
+    ("language", ""), // vide = langue du système
+];
 
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, String> {
@@ -233,10 +242,13 @@ fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, S
 #[tauri::command]
 fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
     if !SETTINGS.iter().any(|(k, _)| *k == key) {
-        return Err(format!("Réglage inconnu : {key}"));
+        return Err(tr!("Réglage inconnu : {key}", "Unknown setting: {key}"));
     }
     if key == "player" && !["inapp", "browser"].contains(&value.trim()) {
-        return Err(format!("Lecteur inconnu : {value}"));
+        return Err(tr!("Lecteur inconnu : {value}", "Unknown player: {value}"));
+    }
+    if key == "language" && !["", "fr", "en"].contains(&value.trim()) {
+        return Err(tr!("Langue inconnue : {value}", "Unknown language: {value}"));
     }
     if key == "platforms" {
         return state.db.set_setting(&key, &providers::normalize_platforms(&value));
@@ -297,15 +309,30 @@ async fn latest_release(http: &reqwest::Client) -> Result<Option<Release>, Strin
 
 /// Compare la version installée à la dernière release GitHub. Silencieux en cas d'échec.
 #[tauri::command]
-async fn check_update(state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
+async fn check_update(app: AppHandle, state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
     let Some(current) = parse_version(env!("CARGO_PKG_VERSION")) else {
         return Ok(None);
     };
     match latest_release(&state.http).await? {
-        Some(r) if r.version > current => Ok(Some(UpdateInfo {
-            version: format!("{}.{}.{}", r.version.0, r.version.1, r.version.2),
-            url: RELEASES_PAGE.to_string(),
-        })),
+        Some(r) if r.version > current => {
+            let version = format!("{}.{}.{}", r.version.0, r.version.1, r.version.2);
+            // Notification système, une seule fois par version, et seulement si l'installation n'est pas automatique.
+            let automatic = state.db.get_setting("auto_update").ok().flatten().as_deref() == Some("1");
+            let already = state.db.get_setting("notified_update").ok().flatten().as_deref() == Some(version.as_str());
+            if !automatic && !already {
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Kiosque")
+                    .body(tr!(
+                        "La version {version} est disponible.",
+                        "Version {version} is available."
+                    ))
+                    .show();
+                let _ = state.db.set_setting("notified_update", &version);
+            }
+            Ok(Some(UpdateInfo { version, url: RELEASES_PAGE.to_string() }))
+        }
         _ => Ok(None),
     }
 }
@@ -329,15 +356,15 @@ fn is_portable(exe: &std::path::Path) -> bool {
 /// Télécharge la dernière version, la met en place et relance Kiosque.
 #[tauri::command]
 async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let current = parse_version(env!("CARGO_PKG_VERSION")).ok_or("Version inconnue.")?;
-    let release = latest_release(&state.http).await?.ok_or("Aucune version trouvée.")?;
+    let current = parse_version(env!("CARGO_PKG_VERSION")).ok_or_else(|| tr!("Version inconnue.", "Unknown version."))?;
+    let release = latest_release(&state.http).await?.ok_or_else(|| tr!("Aucune version trouvée.", "No version found."))?;
     if release.version <= current {
         return Ok(());
     }
     let exe = std::env::current_exe().map_err(|err| err.to_string())?;
     let portable = is_portable(&exe);
     let url = pick_asset(&release.assets, portable)
-        .ok_or("Le fichier de cette version est introuvable sur GitHub.")?
+        .ok_or_else(|| tr!("Le fichier de cette version est introuvable sur GitHub.", "This version's file was not found on GitHub."))?
         .to_string();
 
     let http = reqwest::Client::builder()
@@ -350,12 +377,12 @@ async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<()
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|err| format!("Téléchargement impossible ({err})."))?
+        .map_err(|err| tr!("Téléchargement impossible ({err}).", "Download failed ({err})."))?
         .bytes()
         .await
-        .map_err(|err| format!("Téléchargement interrompu ({err})."))?;
+        .map_err(|err| tr!("Téléchargement interrompu ({err}).", "Download interrupted ({err})."))?;
     if bytes.len() < 1_000_000 || &bytes[..2] != b"MZ" {
-        return Err("Le fichier téléchargé n'est pas valide.".into());
+        return Err(tr!("Le fichier téléchargé n'est pas valide.", "The downloaded file is not valid."));
     }
 
     if portable {
@@ -363,22 +390,22 @@ async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<()
         // le nouveau prend sa place, puis l'ancien est supprimé au lancement suivant.
         let old = exe.with_extension("old");
         let _ = std::fs::remove_file(&old);
-        std::fs::rename(&exe, &old).map_err(|err| format!("Remplacement impossible ({err})."))?;
+        std::fs::rename(&exe, &old).map_err(|err| tr!("Remplacement impossible ({err}).", "Replacement failed ({err})."))?;
         if let Err(err) = std::fs::write(&exe, &bytes) {
             let _ = std::fs::remove_file(&exe);
             let _ = std::fs::rename(&old, &exe);
-            return Err(format!("Écriture impossible ({err})."));
+            return Err(tr!("Écriture impossible ({err}).", "Write failed ({err})."));
         }
         std::process::Command::new(&exe)
             .spawn()
-            .map_err(|err| format!("Relance impossible ({err})."))?;
+            .map_err(|err| tr!("Relance impossible ({err}).", "Restart failed ({err})."))?;
     } else {
         let setup = std::env::temp_dir().join("Kiosque-mise-a-jour-setup.exe");
-        std::fs::write(&setup, &bytes).map_err(|err| format!("Écriture impossible ({err})."))?;
+        std::fs::write(&setup, &bytes).map_err(|err| tr!("Écriture impossible ({err}).", "Write failed ({err})."))?;
         std::process::Command::new(&setup)
             .args(["/P", "/R", "/UPDATE"])
             .spawn()
-            .map_err(|err| format!("Installation impossible ({err})."))?;
+            .map_err(|err| tr!("Installation impossible ({err}).", "Installation failed ({err})."))?;
     }
     app.exit(0);
     Ok(())
@@ -393,7 +420,13 @@ fn app_version() -> String {
 /// Ouvre la page de la dernière release dans le navigateur.
 #[tauri::command]
 fn open_release() -> Result<(), String> {
-    open::that(RELEASES_PAGE).map_err(|err| format!("Impossible d'ouvrir le navigateur : {err}"))
+    open::that(RELEASES_PAGE).map_err(|err| tr!("Impossible d'ouvrir le navigateur : {err}", "Could not open the browser: {err}"))
+}
+
+/// Langue des messages du programme : l'interface l'envoie au démarrage et à chaque changement.
+#[tauri::command]
+fn set_language(code: String) {
+    i18n::set_language(&code);
 }
 
 // ---------- lancement au démarrage de l'ordinateur ----------
@@ -418,6 +451,7 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Reste d'une mise à jour de la version portable.
             if let Ok(exe) = std::env::current_exe() {
@@ -447,6 +481,7 @@ pub fn run() {
             set_setting,
             app_version,
             check_update,
+            set_language,
             install_update,
             open_release,
             get_autostart,

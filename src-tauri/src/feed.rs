@@ -52,7 +52,7 @@ fn video_id(entry_id: &str, link: Option<&str>) -> Option<String> {
 }
 
 pub fn parse_feed(bytes: &[u8]) -> Result<ParsedFeed, String> {
-    let feed = parser::parse(bytes).map_err(|err| format!("flux illisible ({err})"))?;
+    let feed = parser::parse(bytes).map_err(|err| crate::tr!("flux illisible ({err})", "unreadable feed ({err})"))?;
     let title = feed.title.map(|t| t.content).unwrap_or_default();
 
     let mut videos = Vec::new();
@@ -90,14 +90,14 @@ async fn get_feed(http: &reqwest::Client, query: &str) -> Result<ParsedFeed, Str
         .get(&url)
         .send()
         .await
-        .map_err(|err| format!("connexion impossible ({err})"))?;
+        .map_err(|err| crate::tr!("connexion impossible ({err})", "connection failed ({err})"))?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status().as_u16()));
     }
     let bytes = resp
         .bytes()
         .await
-        .map_err(|err| format!("lecture interrompue ({err})"))?;
+        .map_err(|err| crate::tr!("lecture interrompue ({err})", "read interrupted ({err})"))?;
     parse_feed(&bytes)
 }
 

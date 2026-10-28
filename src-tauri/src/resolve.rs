@@ -24,7 +24,7 @@ fn handle_page(handle: &str) -> Result<Target, String> {
             .chars()
             .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '.'));
     if !valid {
-        return Err("Ce pseudo n'est pas valide.".into());
+        return Err(crate::tr!("Ce pseudo n'est pas valide.", "This handle is not valid."));
     }
     Ok(Target::Page(format!("https://www.youtube.com/@{handle}")))
 }
@@ -32,7 +32,7 @@ fn handle_page(handle: &str) -> Result<Target, String> {
 pub fn classify(input: &str) -> Result<Target, String> {
     let s = input.trim();
     if s.is_empty() {
-        return Err("Colle l'adresse d'une chaîne, un @pseudo ou un identifiant commençant par UC.".into());
+        return Err(crate::tr!("Colle l'adresse d'une chaîne, un @pseudo ou un identifiant commençant par UC.", "Paste a channel address, an @handle or an ID starting with UC."));
     }
     if is_channel_id(s) {
         return Ok(Target::ChannelId(s.to_string()));
@@ -49,13 +49,13 @@ pub fn classify(input: &str) -> Result<Target, String> {
     } else {
         format!("https://{s}")
     };
-    let url = Url::parse(&with_scheme).map_err(|_| "Cette adresse n'est pas valide.".to_string())?;
+    let url = Url::parse(&with_scheme).map_err(|_| crate::tr!("Cette adresse n'est pas valide.", "This address is not valid."))?;
     let host = url.host_str().unwrap_or("").to_lowercase();
     if !matches!(
         host.as_str(),
         "youtube.com" | "www.youtube.com" | "m.youtube.com" | "youtu.be"
     ) {
-        return Err("Seules les adresses youtube.com sont acceptées.".into());
+        return Err(crate::tr!("Seules les adresses youtube.com sont acceptées.", "Only youtube.com addresses are accepted."));
     }
 
     let segments: Vec<&str> = url
@@ -157,6 +157,10 @@ pub fn extract_genre(html: &str) -> Option<String> {
         .ok()?
         .captures(html)?;
     let genre = decode_entities(caps[1].trim());
+    // En anglais, on garde la catégorie telle que YouTube la donne.
+    if crate::i18n::is_english() {
+        return Some(genre);
+    }
     let french = match genre.as_str() {
         "Film & Animation" => "Cinéma et animation",
         "Autos & Vehicles" => "Auto",
@@ -195,7 +199,7 @@ pub async fn fetch_profile(http: &reqwest::Client, channel_id: &str) -> Option<P
     let resp = http
         .get(format!("https://www.youtube.com/channel/{channel_id}"))
         .header("Cookie", "SOCS=CAI")
-        .header("Accept-Language", "fr-FR,fr;q=0.9")
+        .header("Accept-Language", if crate::i18n::is_english() { "en-US,en;q=0.9" } else { "fr-FR,fr;q=0.9" })
         .send()
         .await
         .ok()?;
@@ -217,26 +221,25 @@ pub async fn resolve_channel_id(http: &reqwest::Client, input: &str) -> Result<S
             let resp = http
                 .get(&url)
                 .header("Cookie", "SOCS=CAI")
-                .header("Accept-Language", "fr-FR,fr;q=0.9")
+                .header("Accept-Language", if crate::i18n::is_english() { "en-US,en;q=0.9" } else { "fr-FR,fr;q=0.9" })
                 .send()
                 .await
-                .map_err(|err| format!("Connexion impossible ({err})."))?;
+                .map_err(|err| crate::tr!("Connexion impossible ({err}).", "Connection failed ({err})."))?;
             if resp.url().host_str().is_some_and(|h| h.contains("consent.")) {
-                return Err(
-                    "YouTube demande un consentement avant d'afficher la page. \
-                     Colle plutôt l'adresse en /channel/UC… ou l'identifiant UC… de la chaîne."
-                        .into(),
-                );
+                return Err(crate::tr!(
+                    "YouTube demande un consentement avant d'afficher la page. Colle plutôt l'adresse en /channel/UC… ou l'identifiant UC… de la chaîne.",
+                    "YouTube asks for consent before showing the page. Paste the /channel/UC… address or the channel's UC… ID instead."
+                ));
             }
             if !resp.status().is_success() {
-                return Err(format!("Chaîne introuvable (HTTP {}).", resp.status().as_u16()));
+                return Err(crate::tr!("Chaîne introuvable (HTTP {}).", "Channel not found (HTTP {}).", resp.status().as_u16()));
             }
             let html = resp
                 .text()
                 .await
-                .map_err(|err| format!("Lecture interrompue ({err})."))?;
+                .map_err(|err| crate::tr!("Lecture interrompue ({err}).", "Read interrupted ({err})."))?;
             extract_channel_id(&html)
-                .ok_or_else(|| "Impossible de trouver l'identifiant de cette chaîne.".to_string())
+                .ok_or_else(|| crate::tr!("Impossible de trouver l'identifiant de cette chaîne.", "Could not find this channel's ID."))
         }
     }
 }

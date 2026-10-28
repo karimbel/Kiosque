@@ -11,7 +11,7 @@ const navToggle = document.querySelector('#nav-toggle');
 
 function setNav(collapsed, save = true) {
   document.documentElement.dataset.nav = collapsed ? 'collapsed' : 'expanded';
-  const label = collapsed ? 'Agrandir la barre de navigation' : 'Réduire la barre de navigation';
+  const label = t(collapsed ? 'Agrandir la barre de navigation' : 'Réduire la barre de navigation');
   navToggle.setAttribute('aria-expanded', String(!collapsed));
   navToggle.setAttribute('aria-label', label);
   navToggle.title = label;
@@ -24,7 +24,7 @@ setNav(document.documentElement.dataset.nav === 'collapsed', false);
 navToggle.addEventListener('click', () => setNav(document.documentElement.dataset.nav !== 'collapsed'));
 
 if (!window.__TAURI__) {
-  view.innerHTML = '<div class="empty"><h2>Ouvre Kiosque depuis l’application</h2><p>Cette page a besoin de la fenêtre Tauri pour fonctionner.</p></div>';
+  view.innerHTML = `<div class="empty"><h2>${t('Ouvre Kiosque depuis l’application')}</h2><p>${t('Cette page a besoin de la fenêtre Tauri pour fonctionner.')}</p></div>`;
   throw new Error('Tauri indisponible');
 }
 const { invoke } = window.__TAURI__.core;
@@ -33,7 +33,7 @@ const app = {
   tab: 'new',
   channels: [],
   videos: [],
-  settings: { player: 'inapp', exclude_shorts: '1', platforms: '', auto_update: '0' },
+  settings: { player: 'inapp', exclude_shorts: '1', platforms: '', auto_update: '0', language: '' },
   autostart: false,
   platform: (() => { try { return localStorage.getItem('platform') || ''; } catch { return ''; } })(),
   folder: (() => { try { return localStorage.getItem('folder') || ''; } catch { return ''; } })(),
@@ -47,7 +47,7 @@ const app = {
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const plural = (n, one, many) => (n > 1 ? many : one);
+const plural = (n, one, many) => t(lang === 'en' ? (n !== 1 ? many : one) : (n > 1 ? many : one));
 // Miniatures affichées par défaut ; se désactivent dans Chaînes.
 const showThumbs = () => { try { return localStorage.getItem('thumbs') !== '0'; } catch { return true; } };
 
@@ -71,22 +71,22 @@ function calmTitle(title) {
   if (letters.length >= 8) {
     const upper = letters.replace(/[^\p{Lu}]/gu, '').length;
     if (upper / letters.length > 0.7) {
-      t = title.toLocaleLowerCase('fr');
-      t = t.charAt(0).toLocaleUpperCase('fr') + t.slice(1);
+      t = title.toLocaleLowerCase(lang);
+      t = t.charAt(0).toLocaleUpperCase(lang) + t.slice(1);
     }
   }
   return t.replace(/([!?])\1+/g, '$1');
 }
 
-const rtf = new Intl.RelativeTimeFormat('fr', { numeric: 'auto' });
 function when(ts) {
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' });
   const diff = Date.now() / 1000 - ts;
   if (diff < 3600) return rtf.format(-Math.max(1, Math.round(diff / 60)), 'minute');
   if (diff < 86400) return rtf.format(-Math.round(diff / 3600), 'hour');
   if (diff < 7 * 86400) return rtf.format(-Math.round(diff / 86400), 'day');
   const date = new Date(ts * 1000);
   const sameYear = date.getFullYear() === new Date().getFullYear();
-  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) });
+  return date.toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) });
 }
 
 /** Confirmation en deux clics : le premier arme le bouton, le second valide. */
@@ -112,7 +112,7 @@ const playerEl = document.querySelector('#player');
 let captionsOn = (() => { try { return localStorage.getItem('cc') === '1'; } catch { return false; } })();
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
 let speed = (() => { try { const s = Number(localStorage.getItem('speed')); return SPEEDS.includes(s) ? s : 1; } catch { return 1; } })();
-const speedLabel = (s) => `${String(s).replace('.', ',')}×`;
+const speedLabel = (s) => `${String(s).replace('.', lang === 'en' ? '.' : ',')}×`;
 let playing = null;      // vidéo en cours
 let yt = null;           // lecteur YouTube
 let ytTimer = null;      // rafraîchissement de la barre de progression
@@ -167,7 +167,7 @@ function syncControls() {
   const toggle = q('[data-ctl="toggle"]');
   if (toggle) {
     toggle.innerHTML = icon(isPlaying ? 'pause' : 'play');
-    toggle.setAttribute('aria-label', isPlaying ? 'Pause' : 'Lecture');
+    toggle.setAttribute('aria-label', t(isPlaying ? 'Pause' : 'Lire'));
   }
   const duration = yt.getDuration?.() || 0;
   const current = yt.getCurrentTime?.() || 0;
@@ -182,7 +182,7 @@ function syncControls() {
   const mute = q('[data-ctl="mute"]');
   if (mute) {
     mute.innerHTML = icon(muted ? 'muted' : 'volume');
-    mute.setAttribute('aria-label', muted ? 'Activer le son' : 'Couper le son');
+    mute.setAttribute('aria-label', t(muted ? 'Activer le son' : 'Couper le son'));
   }
   const volume = q('[data-ctl="volume"]');
   if (volume && !volume.dataset.drag) {
@@ -214,7 +214,7 @@ function createYtPlayer(video, startAt) {
     height: '100%',
     playerVars: {
       autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3,
-      modestbranding: 1, playsinline: 1, hl: 'fr',
+      modestbranding: 1, playsinline: 1, hl: lang,
       cc_load_policy: captionsOn ? 1 : 0, start: Math.floor(startAt),
     },
     events: {
@@ -224,10 +224,10 @@ function createYtPlayer(video, startAt) {
         const code = e?.data;
         showPlayerMessage(
           code === 101 || code === 150 || code === 153
-            ? 'L’auteur de cette vidéo interdit sa lecture hors de YouTube.'
+            ? t('L’auteur de cette vidéo interdit sa lecture hors de YouTube.')
             : code === 100
-              ? 'Cette vidéo est privée ou a été supprimée.'
-              : 'Cette vidéo ne peut pas être lue ici.',
+              ? t('Cette vidéo est privée ou a été supprimée.')
+              : t('Cette vidéo ne peut pas être lue ici.'),
         );
       },
     },
@@ -241,34 +241,34 @@ async function openPlayer(video) {
     <div class="player-bar">
       <button type="button" class="quiet back full-only" data-player="close">
         <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12.5 5l-5 5 5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Retour
+        ${t('Retour')}
       </button>
       <div class="player-info">
         <p class="player-title" title="${esc(video.title)}">${esc(calmTitle(video.title))}</p>
         <p class="player-channel">${esc(video.channel_title)}</p>
       </div>
-      <button type="button" class="full-only" data-player="minimize" title="Continuer à regarder en petit pendant que tu navigues">Réduire</button>
-      <button type="button" class="full-only" data-player="external">Ouvrir dans le navigateur</button>
-      <button type="button" class="mini-only" data-player="expand" aria-label="Agrandir" title="Agrandir">${icon('full')}</button>
-      <button type="button" class="mini-only close-mini" data-player="close" aria-label="Arrêter la vidéo" title="Arrêter la vidéo">×</button>
+      <button type="button" class="full-only" data-player="minimize" title="${t('Continuer à regarder en petit pendant que tu navigues')}">${t('Réduire')}</button>
+      <button type="button" class="full-only" data-player="external">${t('Ouvrir dans le navigateur')}</button>
+      <button type="button" class="mini-only" data-player="expand" aria-label="${t('Agrandir')}" title="${t('Agrandir')}">${icon('full')}</button>
+      <button type="button" class="mini-only close-mini" data-player="close" aria-label="${t('Arrêter la vidéo')}" title="${t('Arrêter la vidéo')}">×</button>
     </div>
     <div class="player-stage" id="player-stage">
       <div class="video-area">
         <div id="yt-host"></div>
         <div class="player-msg" hidden role="alert">
           <p></p>
-          <button type="button" class="primary" data-player="external">Ouvrir dans le navigateur</button>
+          <button type="button" class="primary" data-player="external">${t('Ouvrir dans le navigateur')}</button>
         </div>
       </div>
       <div class="controls">
-        <button type="button" class="ctl" data-ctl="toggle" aria-label="Lecture">${icon('play')}</button>
-        <input class="range seek" type="range" min="0" max="1000" step="1" value="0" data-ctl="seek" aria-label="Position dans la vidéo">
+        <button type="button" class="ctl" data-ctl="toggle" aria-label="${t('Lire')}">${icon('play')}</button>
+        <input class="range seek" type="range" min="0" max="1000" step="1" value="0" data-ctl="seek" aria-label="${t('Position dans la vidéo')}">
         <span class="time">0:00 / 0:00</span>
-        <button type="button" class="ctl" data-ctl="mute" aria-label="Couper le son">${icon('volume')}</button>
-        <input class="range volume" type="range" min="0" max="100" step="1" value="100" data-ctl="volume" aria-label="Volume">
-        <button type="button" class="ctl speed" data-ctl="speed" aria-label="Vitesse de lecture" title="Vitesse de lecture">${speedLabel(speed)}</button>
-        <button type="button" class="ctl cc" data-ctl="cc" aria-label="Sous-titres" aria-pressed="${captionsOn}" title="Sous-titres (si la vidéo en propose)">${icon('cc')}</button>
-        <button type="button" class="ctl" data-ctl="full" aria-label="Plein écran">${icon('full')}</button>
+        <button type="button" class="ctl" data-ctl="mute" aria-label="${t('Couper le son')}">${icon('volume')}</button>
+        <input class="range volume" type="range" min="0" max="100" step="1" value="100" data-ctl="volume" aria-label="${t('Volume')}">
+        <button type="button" class="ctl speed" data-ctl="speed" aria-label="${t('Vitesse de lecture')}" title="${t('Vitesse de lecture')}">${speedLabel(speed)}</button>
+        <button type="button" class="ctl cc" data-ctl="cc" aria-label="${t('Sous-titres')}" aria-pressed="${captionsOn}" title="${t('Sous-titres (si la vidéo en propose)')}">${icon('cc')}</button>
+        <button type="button" class="ctl" data-ctl="full" aria-label="${t('Plein écran')}">${icon('full')}</button>
       </div>
     </div>`;
   playerEl.hidden = false;
@@ -277,7 +277,7 @@ async function openPlayer(video) {
   // Autres plateformes : uniquement le lecteur de la vidéo, jamais une page de site.
   if (video.embed) {
     if (!isPlayerUrl(video.embed)) {
-      showPlayerMessage('Cette vidéo ne peut pas être lue dans Kiosque.');
+      showPlayerMessage(t('Cette vidéo ne peut pas être lue dans Kiosque.'));
       return;
     }
     q('#player-stage').classList.add('native');
@@ -291,7 +291,7 @@ async function openPlayer(video) {
   try {
     await loadYouTubeApi();
   } catch {
-    if (playing === video) showPlayerMessage('Impossible de joindre YouTube. Vérifie ta connexion internet.');
+    if (playing === video) showPlayerMessage(t('Impossible de joindre YouTube. Vérifie ta connexion internet.'));
     return;
   }
   if (playing !== video) return; // fermé pendant le chargement
@@ -368,7 +368,7 @@ function toggleCaptions() {
     }, 100);
     setTimeout(() => clearInterval(t), 5000);
   }
-  setStatus(captionsOn ? 'Sous-titres activés (si la vidéo en propose)' : 'Sous-titres coupés');
+  setStatus(t(captionsOn ? 'Sous-titres activés (si la vidéo en propose)' : 'Sous-titres coupés'));
 }
 
 function toggleFullscreen() {
@@ -444,7 +444,7 @@ document.addEventListener('fullscreenchange', () => {
   if (!full) return;
   const on = !!document.fullscreenElement;
   full.innerHTML = icon(on ? 'exit' : 'full');
-  full.setAttribute('aria-label', on ? 'Quitter le plein écran' : 'Plein écran');
+  full.setAttribute('aria-label', t(on ? 'Quitter le plein écran' : 'Plein écran'));
 });
 
 document.addEventListener('keydown', (event) => {
@@ -482,7 +482,7 @@ function renderTabs() {
     else button.removeAttribute('aria-current');
     if (button.dataset.tab === 'new') {
       const n = newCount();
-      button.innerHTML = `À voir${n ? `<span class="count">${n}</span>` : ''}`;
+      button.innerHTML = `${t('À voir')}${n ? `<span class="count">${n}</span>` : ''}`;
     }
   }
 }
@@ -491,28 +491,26 @@ function emptyState() {
   const n = app.channels.length;
   if (app.tab === 'new') {
     if (n === 0) {
-      return `<div class="empty"><img src="logo.svg" alt=""><h2>Aucune chaîne suivie</h2>
-        <p>Ajoute les chaînes qui t’intéressent. Elles seront les seules à apparaître ici.</p>
-        <button type="button" class="primary" data-act="go-channels">Ajouter une chaîne</button></div>`;
+      return `<div class="empty"><img src="logo.svg" alt=""><h2>${t('Aucune chaîne suivie')}</h2>
+        <p>${t('Ajoute les chaînes qui t’intéressent. Elles seront les seules à apparaître ici.')}</p>
+        <button type="button" class="primary" data-act="go-channels">${t('Ajouter une chaîne')}</button></div>`;
     }
-    return `<div class="empty compact"><img src="logo.svg" alt=""><h2>C’est tout pour aujourd’hui</h2>
-      <p>Rien de nouveau parmi tes ${n} ${plural(n, 'chaîne', 'chaînes')}.</p></div>`;
+    return `<div class="empty compact"><img src="logo.svg" alt=""><h2>${t('C’est tout pour aujourd’hui')}</h2>
+      <p>${tn(n, 'Rien de nouveau parmi ta chaîne.', 'Rien de nouveau parmi tes {n} chaînes.')}</p></div>`;
   }
   if (app.tab === 'later') {
-    return '<div class="empty"><h2>Rien en attente</h2><p>Les vidéos que tu mets de côté apparaissent ici.</p></div>';
+    return `<div class="empty"><h2>${t('Rien en attente')}</h2><p>${t('Les vidéos que tu mets de côté apparaissent ici.')}</p></div>`;
   }
-  return '<div class="empty"><h2>Aucune vidéo vue</h2><p>Les vidéos que tu ouvres sont rangées ici.</p></div>';
+  return `<div class="empty"><h2>${t('Aucune vidéo vue')}</h2><p>${t('Les vidéos que tu ouvres sont rangées ici.')}</p></div>`;
 }
 
 function actionsFor(tab) {
-  const watch = '<button type="button" class="primary" data-act="watch">Regarder</button>';
-  if (tab === 'new') {
-    return `${watch}<button type="button" class="quiet" data-act="later">Voir plus tard</button><button type="button" class="quiet" data-act="ignore">Ignorer</button>`;
-  }
-  if (tab === 'later') {
-    return `${watch}<button type="button" class="quiet" data-act="ignore">Ignorer</button>`;
-  }
-  return `${watch}<button type="button" class="quiet" data-act="later">Voir plus tard</button>`;
+  const watch = `<button type="button" class="primary" data-act="watch">${t('Regarder')}</button>`;
+  const later = `<button type="button" class="quiet" data-act="later">${t('Voir plus tard')}</button>`;
+  const ignore = `<button type="button" class="quiet" data-act="ignore">${t('Ignorer')}</button>`;
+  if (tab === 'new') return `${watch}${later}${ignore}`;
+  if (tab === 'later') return `${watch}${ignore}`;
+  return `${watch}${later}`;
 }
 
 function videoRow(v, thumbs, latest = false) {
@@ -523,7 +521,7 @@ function videoRow(v, thumbs, latest = false) {
     <div>
       <h3 class="title" title="${esc(v.title)}">${esc(shortTitle(v.title))}</h3>
       <p class="meta"><span class="who">${esc(v.channel_title)}</span>${platformLabel(v.platform) ? `<span class="pf">${esc(platformLabel(v.platform))}</span>` : ''}<span>${esc(when(v.published))}</span></p>
-      <div class="actions">${latest ? '<button type="button" class="primary" data-act="watch">Regarder</button>' : actionsFor(app.tab)}</div>
+      <div class="actions">${latest ? `<button type="button" class="primary" data-act="watch">${t('Regarder')}</button>` : actionsFor(app.tab)}</div>
     </div>
   </li>`;
 }
@@ -531,7 +529,7 @@ function videoRow(v, thumbs, latest = false) {
 // ---------- dossiers ----------
 
 const folderNames = () =>
-  [...new Set(app.channels.map((c) => c.category).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'fr'));
+  [...new Set(app.channels.map((c) => c.category).filter(Boolean))].sort((x, y) => x.localeCompare(y, lang));
 
 function currentFolder() {
   if (app.folder && !folderNames().includes(app.folder)) setFolder('');
@@ -572,7 +570,7 @@ function filterBars(items) {
   if (names.length) {
     const active = currentFolder();
     const base = items.filter(inPlatform);
-    html += `<div class="folders" role="group" aria-label="Dossiers">${chip('folder', 'folder', '', 'Tous', base.length, active === '')}${names
+    html += `<div class="folders" role="group" aria-label="${t('Dossiers')}">${chip('folder', 'folder', '', t('Tous'), base.length, active === '')}${names
       .map((n) => chip('folder', 'folder', n, n, base.filter((v) => v.category === n).length, active === n))
       .join('')}</div>`;
   }
@@ -580,7 +578,7 @@ function filterBars(items) {
   if (keys.length > 1) {
     const active = currentPlatform();
     const base = items.filter(inFolder);
-    html += `<div class="folders" role="group" aria-label="Plateformes">${chip('platform', 'platform', '', 'Toutes', base.length, active === '')}${keys
+    html += `<div class="folders" role="group" aria-label="${t('Plateformes')}">${chip('platform', 'platform', '', t('Toutes'), base.length, active === '')}${keys
       .map((k) => chip('platform', 'platform', k, platformLabel(k), base.filter((v) => v.platform === k).length, active === k))
       .join('')}</div>`;
   }
@@ -593,7 +591,7 @@ function renderVideos() {
     const latestAll = app.latest ?? [];
     const latest = latestAll.length
       ? `<section class="latest" aria-labelledby="latest-title">
-          <h2 id="latest-title">Dernières vidéos de tes chaînes</h2>
+          <h2 id="latest-title">${t('Dernières vidéos de tes chaînes')}</h2>
           ${filterBars(latestAll)}
           <ul class="feed${thumbs ? ' cards' : ''}">${latestAll.filter(visible).map((v) => videoRow(v, thumbs, true)).join('')}</ul>
         </section>`
@@ -604,13 +602,13 @@ function renderVideos() {
   const shown = app.videos.filter(visible);
   // « Tout marquer comme vu » concerne toute la boîte : on le masque quand un filtre est actif.
   const bar = app.tab === 'new' && shown.length && !filtering()
-    ? '<div class="bar"><button type="button" class="quiet" data-act="all-seen">Tout marquer comme vu</button></div>'
+    ? `<div class="bar"><button type="button" class="quiet" data-act="all-seen">${t('Tout marquer comme vu')}</button></div>`
     : '';
   const body = shown.length
     ? `<ul class="feed${thumbs ? ' cards' : ''}">${shown.map((v) => videoRow(v, thumbs)).join('')}</ul>`
-    : `<div class="empty compact"><h2>Rien ici avec ce filtre</h2>
-        <p>Les autres dossiers et plateformes ont encore des vidéos.</p>
-        <button type="button" class="primary" data-act="reset-filters">Tout afficher</button></div>`;
+    : `<div class="empty compact"><h2>${t('Rien ici avec ce filtre')}</h2>
+        <p>${t('Les autres dossiers et plateformes ont encore des vidéos.')}</p>
+        <button type="button" class="primary" data-act="reset-filters">${t('Tout afficher')}</button></div>`;
   view.innerHTML = `${filterBars(app.videos)}${bar}${body}`;
 }
 
@@ -633,13 +631,14 @@ const PLATFORMS = [
   ['vimeo', 'Vimeo', 'Chaînes et comptes Vimeo.'],
   ['dailymotion', 'Dailymotion', 'Chaînes Dailymotion.'],
 ];
+const platformDesc = (text) => t(text);
 const platformLabel = (key) => (key === 'youtube' ? 'YouTube' : PLATFORMS.find((p) => p[0] === key)?.[1] ?? '');
 const activePlatforms = () => (app.settings.platforms || '').split(',').filter(Boolean);
 
 const PLAYER_HINTS = {
   inapp: 'Lecteur de YouTube dans la fenêtre. Des publicités peuvent s’afficher.',
   browser: 'La vidéo s’ouvre dans ton navigateur habituel.',
-};
+}; // traduits à l'affichage
 
 function renderChannels() {
   const s = app.settings;
@@ -649,11 +648,11 @@ function renderChannels() {
   const card = (c) => `<li data-id="${esc(c.id)}">
         ${avatar(c)}
         <div class="info">
-          <span class="line"><span class="name">${esc(c.title)}</span>${c.new_count ? `<span class="pill">${c.new_count} à voir</span>` : ''}</span>
+          <span class="line"><span class="name">${esc(c.title)}</span>${c.new_count ? `<span class="pill">${t('{n} à voir', { n: c.new_count })}</span>` : ''}</span>
           ${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}
-          <span class="tags">${platformLabel(c.platform) ? `<span class="pf" data-pf="${esc(c.platform)}">${esc(platformLabel(c.platform))}</span>` : ''}<span class="folder-slot"><button type="button" class="folder-chip${c.category ? ' set' : ''}" data-act="edit-folder" title="Choisir le dossier de cette chaîne">${c.category ? esc(c.category) : '+ Dossier'}</button></span></span>
+          <span class="tags">${platformLabel(c.platform) ? `<span class="pf" data-pf="${esc(c.platform)}">${esc(platformLabel(c.platform))}</span>` : ''}<span class="folder-slot"><button type="button" class="folder-chip${c.category ? ' set' : ''}" data-act="edit-folder" title="${t('Choisir le dossier de cette chaîne')}">${c.category ? esc(c.category) : t('+ Dossier')}</button></span></span>
         </div>
-        <button type="button" class="remove" data-act="remove-channel" aria-label="Retirer ${esc(c.title)}" title="Retirer cette chaîne">
+        <button type="button" class="remove" data-act="remove-channel" aria-label="${esc(t('Retirer {name}', { name: c.title }))}" title="${t('Retirer cette chaîne')}">
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 2.5l7 7m0-7l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </button>
       </li>`;
@@ -663,9 +662,9 @@ function renderChannels() {
        ['', app.channels.filter((c) => !c.category)]].filter(([, list]) => list.length)
     : [['', app.channels]];
   const list = n
-    ? groups.map(([name, items]) => `${names.length ? `<h3 class="group">${name ? esc(name) : 'Sans dossier'}<span class="note">${items.length}</span></h3>` : ''}
+    ? groups.map(([name, items]) => `${names.length ? `<h3 class="group">${name ? esc(name) : t('Sans dossier')}<span class="note">${items.length}</span></h3>` : ''}
         <ul class="channels">${items.map(card).join('')}</ul>`).join('')
-    : '<div class="empty-small"><img src="logo.svg" alt="" width="72" height="72"><h3>Aucune chaîne pour l’instant</h3><p>Colle l’adresse d’une chaîne, son @pseudo ou un identifiant commençant par UC, puis clique sur « Suivre ».</p></div>';
+    : `<div class="empty-small"><img src="logo.svg" alt="" width="72" height="72"><h3>${t('Aucune chaîne pour l’instant')}</h3><p>${t('Colle l’adresse d’une chaîne, son @pseudo ou un identifiant commençant par UC, puis clique sur « Suivre ».')}</p></div>`;
 
   const segment = (value, label) =>
     `<label class="seg"><input type="radio" name="player" value="${value}" data-setting="player" ${player === value ? 'checked' : ''}><span>${label}</span></label>`;
@@ -673,49 +672,54 @@ function renderChannels() {
     `<label class="switch-row" for="${id}"><span class="switch-text"><span class="switch-label">${label}</span><span class="switch-help">${help}</span></span>
       <input type="checkbox" id="${id}" class="switch" ${attrs} ${on ? 'checked' : ''}></label>`;
 
-  const SUBS = [['platforms', 'Plateformes'], ['playback', 'Lecture'], ['system', 'Système']];
+  const SUBS = [['platforms', t('Plateformes')], ['playback', t('Lecture')], ['system', t('Système')]];
   if (!SUBS.some(([k]) => k === app.sub)) app.sub = 'playback';
 
   const panels = {
     platforms: `
-      ${toggle('pf-youtube', 'YouTube', 'Toujours actif (par défaut).', 'disabled', true)}
-      ${PLATFORMS.map(([key, label, help]) => toggle('pf-' + key, label, help, `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
-      <p class="hint">Colle ensuite l’adresse d’une chaîne ou d’une vidéo de la plateforme dans « Suivre ».</p>`,
+      ${toggle('pf-youtube', 'YouTube', t('Toujours actif (par défaut).'), 'disabled', true)}
+      ${PLATFORMS.map(([key, label, help]) => toggle('pf-' + key, label, t(help), `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
+      <p class="hint">${t('Colle ensuite l’adresse d’une chaîne ou d’une vidéo de la plateforme dans « Suivre ».')}</p>`,
     playback: `
-      <div class="segmented" role="radiogroup" aria-label="Lecteur vidéo">
-        ${segment('inapp', 'Dans Kiosque')}${segment('browser', 'Navigateur')}
+      <div class="segmented" role="radiogroup" aria-label="${t('Lecteur vidéo')}">
+        ${segment('inapp', t('Dans Kiosque'))}${segment('browser', t('Navigateur'))}
       </div>
-      <p class="hint">${PLAYER_HINTS[player]}</p>
-      ${toggle('thumbs', 'Miniatures', 'Une image pour chaque vidéo.', 'data-local="thumbs"', showThumbs())}
-      ${toggle('shorts', 'Masquer les Shorts', 'Pris en compte à la prochaine actualisation.', 'data-setting="exclude_shorts"', s.exclude_shorts !== '0')}`,
+      <p class="hint">${t(PLAYER_HINTS[player])}</p>
+      ${toggle('thumbs', t('Miniatures'), t('Une image pour chaque vidéo.'), 'data-local="thumbs"', showThumbs())}
+      ${toggle('shorts', t('Masquer les Shorts'), t('Pris en compte à la prochaine actualisation.'), 'data-setting="exclude_shorts"', s.exclude_shorts !== '0')}`,
     system: `
-      ${toggle('autoupdate', 'Mise à jour automatique', 'Télécharge et installe les nouvelles versions au démarrage, puis relance Kiosque.', 'data-setting="auto_update"', s.auto_update === '1')}
-      ${toggle('autostart', 'Lancer au démarrage', 'Kiosque s’ouvre en même temps que ton ordinateur.', 'data-local="autostart"', app.autostart)}`,
+      <div class="field"><span class="switch-label">${t('Langue')}</span>
+        <div class="segmented three" role="radiogroup" aria-label="${t('Langue')}">
+          ${[['', t('Automatique')], ['fr', 'Français'], ['en', 'English']].map(([v, label]) => `<label class="seg"><input type="radio" name="language" value="${v}" data-setting="language" ${(s.language || '') === v ? 'checked' : ''}><span>${label}</span></label>`).join('')}
+        </div>
+      </div>
+      ${toggle('autoupdate', t('Mise à jour automatique'), t('Télécharge et installe les nouvelles versions au démarrage, puis relance Kiosque.'), 'data-setting="auto_update"', s.auto_update === '1')}
+      ${toggle('autostart', t('Lancer au démarrage'), t('Kiosque s’ouvre en même temps que ton ordinateur.'), 'data-local="autostart"', app.autostart)}`,
   };
 
   view.classList.toggle('scrolled', view.scrollTop > 2);
   view.innerHTML = `
     <div class="manage">
       <div class="addbar">
-        <h2 class="addbar-title"><label for="channel-input">Ajouter une chaîne</label></h2>
+        <h2 class="addbar-title"><label for="channel-input">${t('Ajouter une chaîne')}</label></h2>
         <form id="add" class="add">
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input id="channel-input" type="text" placeholder="@pseudo, adresse d’une chaîne ou d’une vidéo…" autocomplete="off" spellcheck="false">
-          <button type="submit" class="primary">Suivre</button>
+          <input id="channel-input" type="text" placeholder="${t('@pseudo, adresse d’une chaîne ou d’une vidéo…')}" autocomplete="off" spellcheck="false">
+          <button type="submit" class="primary">${t('Suivre')}</button>
         </form>
       </div>
 
       <div class="cols">
         <section class="mine" aria-labelledby="mine-title">
           <div class="section-head">
-            <h2 id="mine-title">Mes chaînes</h2>
-            <span class="note">${n ? `${n} ${plural(n, 'chaîne suivie', 'chaînes suivies')}` : ''}</span>
+            <h2 id="mine-title">${t('Mes chaînes')}</h2>
+            <span class="note">${n ? tn(n, '{n} chaîne suivie', '{n} chaînes suivies') : ''}</span>
           </div>
           ${list}
         </section>
 
-        <aside class="prefs card" aria-label="Réglages">
-          <div class="subtabs" role="tablist" aria-label="Réglages">
+        <aside class="prefs card" aria-label="${t('Réglages')}">
+          <div class="subtabs" role="tablist" aria-label="${t('Réglages')}">
             ${SUBS.map(([k, label]) => `<button type="button" role="tab" id="sub-${k}" data-sub="${k}" aria-selected="${app.sub === k}" tabindex="${app.sub === k ? 0 : -1}">${label}</button>`).join('')}
           </div>
           <div class="subpanel" role="tabpanel" aria-labelledby="sub-${app.sub}">${panels[app.sub]}</div>
@@ -771,7 +775,7 @@ async function refresh() {
   if (app.busy) return;
   app.busy = true;
   refreshBtn.disabled = true;
-  setStatus('Actualisation…');
+  setStatus(t('Actualisation…'));
   try {
     const report = await invoke('refresh');
     await loadChannels();
@@ -779,12 +783,12 @@ async function refresh() {
     render();
     if (report.errors.length) {
       const n = report.errors.length;
-      setStatus(`${n} ${plural(n, 'chaîne n’a pas répondu', 'chaînes n’ont pas répondu')} : ${report.errors[0]}`, 'error');
+      setStatus(tn(n, '{n} chaîne n’a pas répondu : {err}', '{n} chaînes n’ont pas répondu : {err}', { err: report.errors[0] }), 'error');
     } else if (report.new_videos) {
       const n = report.new_videos;
-      setStatus(`${n} ${plural(n, 'nouvelle vidéo', 'nouvelles vidéos')}`);
+      setStatus(tn(n, '{n} nouvelle vidéo', '{n} nouvelles vidéos'));
     } else {
-      setStatus('À jour');
+      setStatus(t('À jour'));
     }
   } catch (err) {
     setStatus(String(err), 'error');
@@ -838,7 +842,7 @@ view.addEventListener('click', async (event) => {
         const slot = li.querySelector('.folder-slot');
         slot.innerHTML = `<form class="folder-edit" data-id="${esc(channel.id)}">
           <input type="text" list="folder-list" maxlength="40" autocomplete="off" spellcheck="false"
-                 value="${esc(channel.category ?? '')}" placeholder="Nom du dossier" aria-label="Dossier de ${esc(channel.title)}">
+                 value="${esc(channel.category ?? '')}" placeholder="${t('Nom du dossier')}" aria-label="${esc(t('Dossier de {title}', { title: channel.title }))}">
           <datalist id="folder-list">${folderNames().map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
         </form>`;
         const input = slot.querySelector('input');
@@ -874,22 +878,22 @@ view.addEventListener('click', async (event) => {
       case 'unsee':
         return await setStatusOf(li, 'new');
       case 'all-seen': {
-        if (!confirmClick(button, 'Confirmer ?')) return;
+        if (!confirmClick(button, t('Confirmer ?'))) return;
         const n = await invoke('mark_all_seen');
-        setStatus(`${n} ${plural(n, 'vidéo rangée', 'vidéos rangées')} comme ${plural(n, 'vue', 'vues')}`);
+        setStatus(tn(n, '{n} vidéo rangée comme vue', '{n} vidéos rangées comme vues'));
         await loadChannels();
         await loadVideos();
         return render();
       }
       case 'remove-channel': {
         // Confirmation dans la carte : on retire la chaîne seulement après un second clic explicite.
-        const name = li.querySelector('.name')?.textContent ?? 'cette chaîne';
+        const name = li.querySelector('.name')?.textContent ?? t('cette chaîne');
         const box = document.createElement('div');
         box.className = 'confirm';
         box.setAttribute('role', 'alertdialog');
-        box.innerHTML = `<span>Retirer « ${esc(name)} » ?</span>
-          <button type="button" class="danger" data-act="remove-confirm">Retirer</button>
-          <button type="button" class="quiet" data-act="remove-cancel">Annuler</button>`;
+        box.innerHTML = `<span>${esc(t('Retirer « {name} » ?', { name }))}</span>
+          <button type="button" class="danger" data-act="remove-confirm">${t('Retirer')}</button>
+          <button type="button" class="quiet" data-act="remove-cancel">${t('Annuler')}</button>`;
         li.append(box);
         box.querySelector('.quiet').focus();
         return;
@@ -928,10 +932,10 @@ view.addEventListener('submit', async (event) => {
   const value = input.value.trim();
   if (!value) return;
   submit.disabled = true;
-  setStatus('Recherche de la chaîne…');
+  setStatus(t('Recherche de la chaîne…'));
   try {
     const channel = await invoke('add_channel', { input: value });
-    setStatus(`« ${channel.title} » est suivie`);
+    setStatus(t('« {title} » est suivie', { title: channel.title }));
     await loadChannels();
     render();
     // La nouvelle carte est mise en vue et brièvement mise en évidence.
@@ -967,7 +971,7 @@ view.addEventListener('change', async (event) => {
     if (el.dataset.local === 'autostart') {
       try {
         app.autostart = await invoke('set_autostart', { enabled: el.checked });
-        setStatus(app.autostart ? 'Kiosque se lancera au démarrage' : 'Lancement au démarrage désactivé');
+        setStatus(t(app.autostart ? 'Kiosque se lancera au démarrage' : 'Lancement au démarrage désactivé'));
       } catch (err) {
         el.checked = !el.checked;
         setStatus(String(err), 'error');
@@ -984,7 +988,7 @@ view.addEventListener('change', async (event) => {
       const value = [...set].join(',');
       await invoke('set_setting', { key: 'platforms', value });
       app.settings.platforms = value;
-      setStatus(el.checked ? `${platformLabel(el.dataset.platform)} activé` : `${platformLabel(el.dataset.platform)} désactivé`);
+      setStatus(t(el.checked ? '{label} activé' : '{label} désactivé', { label: platformLabel(el.dataset.platform) }));
       return;
     }
     const key = el.dataset.setting;
@@ -993,7 +997,8 @@ view.addEventListener('change', async (event) => {
     await invoke('set_setting', { key, value });
     app.settings[key] = value;
     if (key === 'player') renderChannels();
-    if (key === 'exclude_shorts') setStatus('Appliqué à la prochaine actualisation');
+    if (key === 'language') return applyLanguage();
+    if (key === 'exclude_shorts') setStatus(t('Appliqué à la prochaine actualisation'));
   } catch (err) {
     setStatus(String(err), 'error');
   }
@@ -1003,6 +1008,28 @@ for (const button of tabButtons) {
   button.addEventListener('click', () => switchTab(button.dataset.tab));
 }
 refreshBtn.addEventListener('click', refresh);
+
+// ---------- langue ----------
+
+/** Traduit les textes fixes de la page (index.html) et ceux de la barre de navigation. */
+function applyStatic() {
+  for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
+  for (const el of document.querySelectorAll('[data-t-aria]')) el.setAttribute('aria-label', t(el.dataset.tAria));
+  setNav(document.documentElement.dataset.nav === 'collapsed', false);
+  const box = document.querySelector('#update');
+  if (box && !box.hidden && !box.classList.contains('busy') && box.dataset.version) {
+    document.querySelector('#update-text').textContent = t('Kiosque {v} est disponible.', { v: box.dataset.version });
+  }
+}
+
+/** Applique la langue choisie à toute l'interface et aux messages du programme. */
+async function applyLanguage() {
+  setLanguage(app.settings.language);
+  try { await invoke('set_language', { code: lang }); } catch { /* messages du programme restent dans l'ancienne langue */ }
+  applyStatic();
+  setStatus('');
+  render();
+}
 
 // ---------- démarrage ----------
 
@@ -1014,20 +1041,20 @@ async function checkUpdate() {
     const text = document.querySelector('#update-text');
     box.dataset.version = info.version;
     if (app.settings.auto_update === '1') {
-      text.textContent = `Mise à jour vers Kiosque ${info.version} en cours…`;
+      text.textContent = t('Mise à jour vers Kiosque {v} en cours…', { v: info.version });
       box.classList.add('busy');
       box.hidden = false;
       try {
         await invoke('install_update'); // relance Kiosque : on ne revient normalement pas ici
       } catch (err) {
         box.classList.remove('busy');
-        text.textContent = `Kiosque ${info.version} est disponible.`;
-        setStatus(`Mise à jour impossible : ${err}`, 'error');
+        text.textContent = t('Kiosque {v} est disponible.', { v: info.version });
+        setStatus(t('Mise à jour impossible : {err}', { err }), 'error');
       }
       return;
     }
     try { if (localStorage.getItem('update-dismissed') === info.version) return; } catch { /* facultatif */ }
-    text.textContent = `Kiosque ${info.version} est disponible.`;
+    text.textContent = t('Kiosque {v} est disponible.', { v: info.version });
     box.hidden = false;
   } catch { /* hors ligne ou GitHub injoignable : on ne dit rien */ }
 }
@@ -1047,6 +1074,9 @@ document.querySelector('#update').addEventListener('click', async (event) => {
   try {
     app.settings = await invoke('get_settings');
     if (app.settings.player !== 'browser') app.settings.player = 'inapp'; // anciens réglages (mpv) : lecteur intégré
+    setLanguage(app.settings.language);
+    invoke('set_language', { code: lang }).catch(() => {});
+    applyStatic();
     app.version = await invoke('app_version').catch(() => '');
     app.autostart = await invoke('get_autostart').catch(() => false);
     await loadChannels();
