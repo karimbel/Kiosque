@@ -1,6 +1,6 @@
 {
   "name": "kiosque",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Un lecteur de chaînes YouTube qui se termine : uniquement ce que tu as choisi de suivre.",
   "scripts": {

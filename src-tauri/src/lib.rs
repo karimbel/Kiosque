@@ -349,6 +349,32 @@ fn pick_asset(assets: &[(String, String)], portable: bool) -> Option<&str> {
         .map(|(_, url)| url.as_str())
 }
 
+/// Nom du nouveau programme portable : il reprend le nom de la release (Kiosque_0.2.3_portable.exe)
+/// si l'ancien suivait ce modèle ; un fichier renommé par l'utilisateur garde son nom.
+fn portable_target(exe: &std::path::Path, url: &str) -> std::path::PathBuf {
+    let current = exe.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let fresh = url.rsplit('/').next().unwrap_or_default();
+    let standard = |n: &str| n.starts_with("Kiosque_") && n.ends_with("_portable.exe");
+    match exe.parent() {
+        Some(dir) if standard(current) && standard(fresh) => dir.join(fresh),
+        _ => exe.to_path_buf(),
+    }
+}
+
+/// Supprime les anciens programmes portables mis de côté lors d'une mise à jour.
+fn clean_old(exe: &std::path::Path) {
+    let _ = std::fs::remove_file(exe.with_extension("old"));
+    let Some(dir) = exe.parent() else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        if name.starts_with("Kiosque_") && name.ends_with("_portable.old") {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 /// Version installée par l'installeur : un `uninstall.exe` se trouve à côté du programme.
 fn is_portable(exe: &std::path::Path) -> bool {
     !exe.parent().map(|dir| dir.join("uninstall.exe").exists()).unwrap_or(false)
@@ -427,17 +453,20 @@ async fn install_update_inner(app: &AppHandle, state: &AppState) -> Result<(), S
         // Windows laisse renommer un programme en cours d'exécution : l'ancien est mis de côté,
         // le nouveau prend sa place, puis l'ancien est supprimé au lancement suivant.
         let old = exe.with_extension("old");
+        let target = portable_target(&exe, &url);
         let _ = std::fs::remove_file(&old);
         std::fs::rename(&exe, &old).map_err(|err| tr!("Remplacement impossible ({err}).", "Replacement failed ({err})."))?;
-        if let Err(err) = std::fs::write(&exe, &bytes) {
-            let _ = std::fs::remove_file(&exe);
+        if let Err(err) = std::fs::write(&target, &bytes) {
+            let _ = std::fs::remove_file(&target);
             let _ = std::fs::rename(&old, &exe);
             return Err(tr!("Écriture impossible ({err}).", "Write failed ({err})."));
         }
-        log_update(app, "ancien programme mis de côté, nouveau programme écrit");
-        std::process::Command::new(&exe)
-            .spawn()
-            .map_err(|err| tr!("Relance impossible ({err}).", "Restart failed ({err})."))?;
+        log_update(app, &format!("ancien programme mis de côté, nouveau programme écrit : {}", target.display()));
+        if let Err(err) = std::process::Command::new(&target).spawn() {
+            let _ = std::fs::remove_file(&target);
+            let _ = std::fs::rename(&old, &exe);
+            return Err(tr!("Relance impossible ({err}).", "Restart failed ({err})."));
+        }
         log_update(app, "nouveau programme lancé");
     } else {
         let setup = std::env::temp_dir().join("Kiosque-mise-a-jour-setup.exe");
@@ -502,7 +531,7 @@ pub fn run() {
         .setup(|app| {
             // Reste d'une mise à jour de la version portable.
             if let Ok(exe) = std::env::current_exe() {
-                let _ = std::fs::remove_file(exe.with_extension("old"));
+                clean_old(&exe);
             }
             let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
             std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
@@ -566,5 +595,15 @@ mod tests {
         // GitHub renvoie le nom du dépôt avec sa casse d'origine (« Kiosque »).
         let real = vec![("Kiosque_0.1.9_portable.exe".to_string(), "https://github.com/karimbel/Kiosque/releases/download/v0.1.9/Kiosque_0.1.9_portable.exe".to_string())];
         assert!(pick_asset(&real, true).is_some());
+    }
+
+    #[test]
+    fn nom_du_programme_portable() {
+        use super::portable_target;
+        use std::path::Path;
+        let url = "https://github.com/karimbel/Kiosque/releases/download/v0.2.3/Kiosque_0.2.3_portable.exe";
+        assert_eq!(portable_target(Path::new("C:/a/Kiosque_0.2.1_portable.exe"), url), Path::new("C:/a/Kiosque_0.2.3_portable.exe"));
+        // Un fichier renommé par l'utilisateur garde son nom.
+        assert_eq!(portable_target(Path::new("C:/a/MonKiosque.exe"), url), Path::new("C:/a/MonKiosque.exe"));
     }
 }

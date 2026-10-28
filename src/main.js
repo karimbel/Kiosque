@@ -575,21 +575,23 @@ function filterBars(items) {
   const pfKeys = ['youtube', ...PLATFORMS.map((p) => p[0])].filter((k) => enabled.has(k) && items.some((v) => v.platform === k));
   const folders = [...new Set(items.map(folderOf))]
     .sort((x, y) => (x === '' ? 1 : y === '' ? -1 : x.localeCompare(y, lang)));
-  if (pfKeys.length < 2 && folders.length < 2) return '';
+  if (!items.length) return '';
   const pf = currentPlatform();
   const fo = currentFolder();
   const byFolder = items.filter(inFolder);
   const byPlatform = items.filter(inPlatform);
   const parts = [chip('', 'reset-filters', '', '', t('Tout'), items.length, !pf && !fo)];
-  if (pfKeys.length > 1) {
-    parts.push(...pfKeys.map((k) =>
-      chip('pf-chip', 'platform', 'platform', pf === k ? '' : k, platformLabel(k), byFolder.filter((v) => v.platform === k).length, pf === k)));
+  if (pfKeys.length) {
+    parts.push(...pfKeys
+      .map((k) => [k, byFolder.filter((v) => v.platform === k).length])
+      .filter(([k, n]) => n > 0 || pf === k)
+      .map(([k, n]) => chip('pf-chip', 'platform', 'platform', pf === k ? '' : k, platformLabel(k), n, pf === k)));
   }
-  if (folders.length > 1) {
-    parts.push(...folders.map((n) => {
-      const key = n === '' ? NO_FOLDER : n;
-      return chip('fo-chip', 'folder', 'folder', fo === key ? '' : key, n || t('Sans dossier'), byPlatform.filter((v) => folderOf(v) === n).length, fo === key);
-    }));
+  if (folders.length) {
+    parts.push(...folders
+      .map((n) => [n, n === '' ? NO_FOLDER : n, byPlatform.filter((v) => folderOf(v) === n).length])
+      .filter(([, key, count]) => count > 0 || fo === key)
+      .map(([n, key, count]) => chip('fo-chip', 'folder', 'folder', fo === key ? '' : key, n || t('Sans dossier'), count, fo === key)));
   }
   return `<div class="filterbar" role="group" aria-label="${t('Filtres')}"><div class="filterbar-in">${parts.join('')}</div></div>`;
 }
