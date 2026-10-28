@@ -788,3 +788,9 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 .yt-shield { position: absolute; inset: 0; cursor: default; }
 .player-stage.native .yt-shield { display: none; }
 .channels .tags .pf { font-size: 12px; font-weight: 500; padding: 1px 10px; }
+
+/* Édition du dossier : le champ reste sur la ligne de la source, il ne passe pas dessous. */
+.channels .tags:has(.folder-edit) { flex-wrap: nowrap; align-items: center; }
+.channels .tags:has(.folder-edit) .pf { flex: none; }
+.channels .tags:has(.folder-edit) .folder-slot { flex: 1; min-width: 0; }
+.channels .tags .folder-edit { width: 100%; margin: 0; }
