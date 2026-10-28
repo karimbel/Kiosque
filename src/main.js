@@ -218,7 +218,12 @@ function createYtPlayer(video, startAt) {
       cc_load_policy: captionsOn ? 1 : 0, start: Math.floor(startAt),
     },
     events: {
-      onReady: () => { try { yt.setPlaybackRate(speed); } catch { /* facultatif */ } syncControls(); },
+      onReady: () => {
+        try { yt.setPlaybackRate(speed); } catch { /* facultatif */ }
+        syncControls();
+        enforceCaptions();
+        if (captionsOn) pickCaptionTrack();
+      },
       onStateChange: syncControls,
       onError: (e) => {
         const code = e?.data;
@@ -349,27 +354,47 @@ function cycleSpeed() {
 }
 
 /** Active ou coupe les sous-titres : le lecteur est relancé à l'endroit où tu en étais. */
+/**
+ * YouTube retient le dernier choix de sous-titres de la personne et peut l'appliquer malgré `cc_load_policy` :
+ * on force donc l'état voulu en chargeant ou déchargeant le module de sous-titres, à plusieurs reprises
+ * car il s'initialise un peu après le démarrage de la vidéo.
+ */
+function enforceCaptions() {
+  const player = yt;
+  const apply = () => {
+    if (yt !== player) return; // le lecteur a été recréé entre-temps
+    for (const module of ['captions', 'cc']) {
+      try { captionsOn ? player.loadModule(module) : player.unloadModule(module); } catch { /* module absent */ }
+    }
+  };
+  for (const delay of [0, 600, 1500, 3000]) setTimeout(apply, delay);
+}
+
 function toggleCaptions() {
-  if (!yt?.getCurrentTime || !playing) return;
+  if (!yt?.loadModule || !playing) return;
   captionsOn = !captionsOn;
   try { localStorage.setItem('cc', captionsOn ? '1' : '0'); } catch { /* facultatif */ }
-  const at = yt.getCurrentTime() || 0;
-  const wasPaused = yt.getPlayerState?.() === 2;
-  const video = playing;
-  try { yt.destroy(); } catch { /* déjà détruit */ }
-  yt = null;
-  const area = q('.video-area');
-  area.insertAdjacentHTML('afterbegin', '<div id="yt-host"></div>');
   const button = q('[data-ctl="cc"]');
   if (button) button.setAttribute('aria-pressed', String(captionsOn));
-  createYtPlayer(video, at);
-  if (wasPaused) {
-    const t = setInterval(() => {
-      if (yt?.getPlayerState?.() === 1) { yt.pauseVideo(); clearInterval(t); }
-    }, 100);
-    setTimeout(() => clearInterval(t), 5000);
-  }
+  // Sans recréer le lecteur : la vidéo ne bouge pas, seuls les sous-titres apparaissent ou disparaissent.
+  enforceCaptions();
+  if (captionsOn) pickCaptionTrack();
   setStatus(t(captionsOn ? 'Sous-titres activés (si la vidéo en propose)' : 'Sous-titres coupés'));
+}
+
+/** Choisit une piste de sous-titres quand le module vient d'être chargé : la langue de l'interface si possible. */
+function pickCaptionTrack() {
+  const player = yt;
+  const choose = () => {
+    if (yt !== player || !captionsOn) return;
+    try {
+      const tracks = player.getOption('captions', 'tracklist') || [];
+      if (!tracks.length) return;
+      const track = tracks.find((x) => (x.languageCode || '').startsWith(lang)) || tracks[0];
+      player.setOption('captions', 'track', { languageCode: track.languageCode });
+    } catch { /* la vidéo n'a pas de sous-titres */ }
+  };
+  for (const delay of [300, 1000, 2000]) setTimeout(choose, delay);
 }
 
 function toggleFullscreen() {
