@@ -223,7 +223,7 @@ fn open_video(id: String, state: State<'_, AppState>) -> Result<(), String> {
 
 // ---------- réglages ----------
 
-const SETTINGS: [(&str, &str); 3] = [("player", "inapp"), ("exclude_shorts", "1"), ("platforms", "")];
+const SETTINGS: [(&str, &str); 4] = [("player", "inapp"), ("exclude_shorts", "1"), ("platforms", ""), ("auto_update", "0")];
 
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, String> {
@@ -249,6 +249,158 @@ fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result
     state.db.set_setting(&key, value.trim())
 }
 
+// ---------- nouvelle version ----------
+
+#[derive(Serialize)]
+struct UpdateInfo {
+    version: String,
+    url: String,
+}
+
+const RELEASES_API: &str = "https://api.github.com/repos/karimbel/kiosque/releases/latest";
+const RELEASES_PAGE: &str = "https://github.com/karimbel/kiosque/releases/latest";
+
+/// Les trois nombres d'une version (« v0.1.5 » ou « 0.1.5 »).
+fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = text.trim().trim_start_matches('v').split('.');
+    let a = parts.next()?.parse().ok()?;
+    let b = parts.next()?.parse().ok()?;
+    let c = parts.next()?.split(|ch: char| !ch.is_ascii_digit()).next()?.parse().ok()?;
+    Some((a, b, c))
+}
+
+struct Release {
+    version: (u32, u32, u32),
+    assets: Vec<(String, String)>, // (nom du fichier, adresse de téléchargement)
+}
+
+async fn latest_release(http: &reqwest::Client) -> Result<Option<Release>, String> {
+    let text = http
+        .get(RELEASES_API)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|err| err.to_string())?
+        .text()
+        .await
+        .map_err(|err| err.to_string())?;
+    let body: serde_json::Value = serde_json::from_str(&text).map_err(|err| err.to_string())?;
+    let Some(version) = body["tag_name"].as_str().and_then(parse_version) else {
+        return Ok(None);
+    };
+    let assets = body["assets"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|a| Some((a["name"].as_str()?.to_string(), a["browser_download_url"].as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(Some(Release { version, assets }))
+}
+
+/// Compare la version installée à la dernière release GitHub. Silencieux en cas d'échec.
+#[tauri::command]
+async fn check_update(state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
+    let Some(current) = parse_version(env!("CARGO_PKG_VERSION")) else {
+        return Ok(None);
+    };
+    match latest_release(&state.http).await? {
+        Some(r) if r.version > current => Ok(Some(UpdateInfo {
+            version: format!("{}.{}.{}", r.version.0, r.version.1, r.version.2),
+            url: RELEASES_PAGE.to_string(),
+        })),
+        _ => Ok(None),
+    }
+}
+
+/// Le fichier de la release qui correspond à cette installation, sur GitHub uniquement.
+fn pick_asset(assets: &[(String, String)], portable: bool) -> Option<&str> {
+    let suffix = if portable { "_portable.exe" } else { "_x64-setup.exe" };
+    assets
+        .iter()
+        .find(|(name, url)| {
+            name.ends_with(suffix) && url.starts_with("https://github.com/karimbel/kiosque/releases/download/")
+        })
+        .map(|(_, url)| url.as_str())
+}
+
+/// Version installée par l'installeur : un `uninstall.exe` se trouve à côté du programme.
+fn is_portable(exe: &std::path::Path) -> bool {
+    !exe.parent().map(|dir| dir.join("uninstall.exe").exists()).unwrap_or(false)
+}
+
+/// Télécharge la dernière version, la met en place et relance Kiosque.
+#[tauri::command]
+async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let current = parse_version(env!("CARGO_PKG_VERSION")).ok_or("Version inconnue.")?;
+    let release = latest_release(&state.http).await?.ok_or("Aucune version trouvée.")?;
+    if release.version <= current {
+        return Ok(());
+    }
+    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
+    let portable = is_portable(&exe);
+    let url = pick_asset(&release.assets, portable)
+        .ok_or("Le fichier de cette version est introuvable sur GitHub.")?
+        .to_string();
+
+    let http = reqwest::Client::builder()
+        .user_agent("Kiosque")
+        .timeout(std::time::Duration::from_secs(600))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let bytes = http
+        .get(&url)
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(|err| format!("Téléchargement impossible ({err})."))?
+        .bytes()
+        .await
+        .map_err(|err| format!("Téléchargement interrompu ({err})."))?;
+    if bytes.len() < 1_000_000 || &bytes[..2] != b"MZ" {
+        return Err("Le fichier téléchargé n'est pas valide.".into());
+    }
+
+    if portable {
+        // Windows laisse renommer un programme en cours d'exécution : l'ancien est mis de côté,
+        // le nouveau prend sa place, puis l'ancien est supprimé au lancement suivant.
+        let old = exe.with_extension("old");
+        let _ = std::fs::remove_file(&old);
+        std::fs::rename(&exe, &old).map_err(|err| format!("Remplacement impossible ({err})."))?;
+        if let Err(err) = std::fs::write(&exe, &bytes) {
+            let _ = std::fs::remove_file(&exe);
+            let _ = std::fs::rename(&old, &exe);
+            return Err(format!("Écriture impossible ({err})."));
+        }
+        std::process::Command::new(&exe)
+            .spawn()
+            .map_err(|err| format!("Relance impossible ({err})."))?;
+    } else {
+        let setup = std::env::temp_dir().join("Kiosque-mise-a-jour-setup.exe");
+        std::fs::write(&setup, &bytes).map_err(|err| format!("Écriture impossible ({err})."))?;
+        std::process::Command::new(&setup)
+            .args(["/P", "/R", "/UPDATE"])
+            .spawn()
+            .map_err(|err| format!("Installation impossible ({err})."))?;
+    }
+    app.exit(0);
+    Ok(())
+}
+
+/// Version de Kiosque en cours d'utilisation.
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Ouvre la page de la dernière release dans le navigateur.
+#[tauri::command]
+fn open_release() -> Result<(), String> {
+    open::that(RELEASES_PAGE).map_err(|err| format!("Impossible d'ouvrir le navigateur : {err}"))
+}
+
 // ---------- lancement au démarrage de l'ordinateur ----------
 
 #[tauri::command]
@@ -272,6 +424,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .setup(|app| {
+            // Reste d'une mise à jour de la version portable.
+            if let Ok(exe) = std::env::current_exe() {
+                let _ = std::fs::remove_file(exe.with_extension("old"));
+            }
             let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
             std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
             let db = Db::open(&dir.join("kiosque.sqlite3"))?;
@@ -294,9 +450,40 @@ pub fn run() {
             open_video,
             get_settings,
             set_setting,
+            app_version,
+            check_update,
+            install_update,
+            open_release,
             get_autostart,
             set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Kiosque");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_version, pick_asset};
+
+    #[test]
+    fn versions() {
+        assert_eq!(parse_version("v0.1.5"), Some((0, 1, 5)));
+        assert_eq!(parse_version("0.2.10"), Some((0, 2, 10)));
+        assert_eq!(parse_version("v1.0.0-beta"), Some((1, 0, 0)));
+        assert_eq!(parse_version("n'importe quoi"), None);
+        assert!(parse_version("v0.1.10") > parse_version("v0.1.9"));
+    }
+
+    #[test]
+    fn choix_du_fichier() {
+        let base = "https://github.com/karimbel/kiosque/releases/download/v0.1.6/";
+        let assets = vec![
+            ("Kiosque_0.1.6_x64-setup.exe".to_string(), format!("{base}Kiosque_0.1.6_x64-setup.exe")),
+            ("Kiosque_0.1.6_portable.exe".to_string(), format!("{base}Kiosque_0.1.6_portable.exe")),
+            ("Kiosque_0.1.6_evil_portable.exe".to_string(), "https://exemple.com/x_portable.exe".to_string()),
+        ];
+        assert!(pick_asset(&assets, false).unwrap().ends_with("_x64-setup.exe"));
+        assert!(pick_asset(&assets, true).unwrap().ends_with("0.1.6_portable.exe"));
+        assert_eq!(pick_asset(&assets[2..], true), None);
+    }
 }

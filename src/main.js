@@ -33,10 +33,11 @@ const app = {
   tab: 'new',
   channels: [],
   videos: [],
-  settings: { player: 'inapp', exclude_shorts: '1', platforms: '' },
+  settings: { player: 'inapp', exclude_shorts: '1', platforms: '', auto_update: '0' },
   autostart: false,
   folder: (() => { try { return localStorage.getItem('folder') || ''; } catch { return ''; } })(),
   sub: (() => { try { return localStorage.getItem('sub') || 'platforms'; } catch { return 'mine'; } })(),
+  version: '',
   busy: false,
 };
 
@@ -570,6 +571,7 @@ function renderChannels() {
       ${toggle('thumbs', 'Miniatures', 'Une image pour chaque vidéo.', 'data-local="thumbs"', showThumbs())}
       ${toggle('shorts', 'Masquer les Shorts', 'Pris en compte à la prochaine actualisation.', 'data-setting="exclude_shorts"', s.exclude_shorts !== '0')}`,
     system: `
+      ${toggle('autoupdate', 'Mise à jour automatique', 'Télécharge et installe les nouvelles versions au démarrage, puis relance Kiosque.', 'data-setting="auto_update"', s.auto_update === '1')}
       ${toggle('autostart', 'Lancer au démarrage', 'Kiosque s’ouvre en même temps que ton ordinateur.', 'data-local="autostart"', app.autostart)}`,
   };
 
@@ -594,6 +596,7 @@ function renderChannels() {
           ${SUBS.map(([k, label]) => `<button type="button" role="tab" id="sub-${k}" data-sub="${k}" aria-selected="${app.sub === k}" tabindex="${app.sub === k ? 0 : -1}">${label}</button>`).join('')}
         </div>
         <div class="subpanel" role="tabpanel" aria-labelledby="sub-${app.sub}">${panels[app.sub]}</div>
+        ${app.version ? `<p class="version">Kiosque ${esc(app.version)}</p>` : ''}
       </aside>
     </div>`;
 }
@@ -862,15 +865,54 @@ refreshBtn.addEventListener('click', refresh);
 
 // ---------- démarrage ----------
 
+async function checkUpdate() {
+  try {
+    const info = await invoke('check_update');
+    if (!info) return;
+    const box = document.querySelector('#update');
+    const text = document.querySelector('#update-text');
+    box.dataset.version = info.version;
+    if (app.settings.auto_update === '1') {
+      text.textContent = `Mise à jour vers Kiosque ${info.version} en cours…`;
+      box.classList.add('busy');
+      box.hidden = false;
+      try {
+        await invoke('install_update'); // relance Kiosque : on ne revient normalement pas ici
+      } catch (err) {
+        box.classList.remove('busy');
+        text.textContent = `Kiosque ${info.version} est disponible.`;
+        setStatus(`Mise à jour impossible : ${err}`, 'error');
+      }
+      return;
+    }
+    try { if (localStorage.getItem('update-dismissed') === info.version) return; } catch { /* facultatif */ }
+    text.textContent = `Kiosque ${info.version} est disponible.`;
+    box.hidden = false;
+  } catch { /* hors ligne ou GitHub injoignable : on ne dit rien */ }
+}
+
+document.querySelector('#update').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-update]');
+  if (!button) return;
+  if (button.dataset.update === 'open') {
+    try { await invoke('open_release'); } catch (err) { setStatus(String(err), 'error'); }
+    return;
+  }
+  try { localStorage.setItem('update-dismissed', document.querySelector('#update').dataset.version); } catch { /* facultatif */ }
+  document.querySelector('#update').hidden = true;
+});
+
 (async function init() {
   try {
     app.settings = await invoke('get_settings');
     if (app.settings.player !== 'browser') app.settings.player = 'inapp'; // anciens réglages (mpv) : lecteur intégré
+    app.version = await invoke('app_version').catch(() => '');
     app.autostart = await invoke('get_autostart').catch(() => false);
     await loadChannels();
     await loadVideos();
     render();
     if (app.channels.length) refresh();
+    checkUpdate();
   } catch (err) {
     setStatus(String(err), 'error');
     render();
