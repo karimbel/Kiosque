@@ -40,7 +40,7 @@ Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur et l
    git push -u origin main
    ```
 2. Lance la construction : onglet **Actions → Construire Kiosque → Run workflow**. Compte une dizaine de minutes la première fois, moins ensuite.
-3. Va dans **Releases** : un brouillon contient `Kiosque_0.1.0_x64-setup.exe` (installeur) et `Kiosque_0.1.0_portable.exe` (aucune installation : tu le lances directement). Télécharge celui que tu préfères. « Publish release » est facultatif.
+3. Va dans **Releases** : la release publiée contient `Kiosque_0.1.0_x64-setup.exe` (installeur) et `Kiosque_0.1.0_portable.exe` (aucune installation : tu le lances directement). Télécharge celui que tu préfères.
 
 Pour une nouvelle version, change `version` dans `src-tauri/tauri.conf.json`, envoie les changements (`git add . && git commit -m "…" && git push`), puis relance le workflow, ou pousse une étiquette : `git tag v0.2.0 && git push --tags`.
 
