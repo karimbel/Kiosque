@@ -769,3 +769,5 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 
 .update progress { width: 160px; height: 8px; accent-color: var(--awning-red); }
 .update progress[hidden] { display: none; }
+
+/* Version de test de la mise à jour interne. */
