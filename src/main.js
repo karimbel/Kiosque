@@ -255,6 +255,7 @@ async function openPlayer(video) {
     <div class="player-stage" id="player-stage">
       <div class="video-area">
         <div id="yt-host"></div>
+        <div class="yt-shield" data-ctl="toggle" aria-hidden="true"></div>
         <div class="player-msg" hidden role="alert">
           <p></p>
           <button type="button" class="primary" data-player="external">${t('Ouvrir dans le navigateur')}</button>
@@ -520,7 +521,8 @@ function videoRow(v, thumbs, latest = false) {
     ${thumbs ? `<button type="button" class="thumb-btn" data-act="watch" tabindex="-1" aria-hidden="true"><img class="thumb" src="${esc(src)}" alt="" loading="lazy" onerror="this.closest('.thumb-btn').remove()"></button>` : ''}
     <div>
       <h3 class="title" title="${esc(v.title)}">${esc(shortTitle(v.title))}</h3>
-      <p class="meta"><span class="who">${esc(v.channel_title)}</span>${platformLabel(v.platform) ? `<span class="pf">${esc(platformLabel(v.platform))}</span>` : ''}${v.category ? `<span class="fo">${esc(v.category)}</span>` : ''}<span>${esc(when(v.published))}</span></p>
+      <p class="meta"><span class="who">${esc(v.channel_title)}</span><span class="when">${esc(when(v.published))}</span></p>
+      ${platformLabel(v.platform) || v.category ? `<p class="vtags">${platformLabel(v.platform) ? `<span class="pf">${esc(platformLabel(v.platform))}</span>` : ''}${v.category ? `<span class="fo">${esc(v.category)}</span>` : ''}</p>` : ''}
       <div class="actions">${latest ? `<button type="button" class="primary" data-act="watch">${t('Regarder')}</button>` : actionsFor(app.tab)}</div>
     </div>
   </li>`;

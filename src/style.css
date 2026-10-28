@@ -266,7 +266,10 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
   min-height: 2.7em;
 }
 
-.meta { margin: 5px 0 12px; font-size: 14px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.meta { margin: 5px 0 8px; font-size: 14px; color: var(--muted); display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.meta .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta .when { flex: none; text-align: right; }
+.vtags { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .meta .who { color: var(--ink); font-weight: 500; }
 
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -779,3 +782,8 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 }
 .feed .item:hover .title { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .feed .item { transition: none; } }
+
+/* Voile transparent sur la vidéo YouTube : YouTube n'affiche plus ses boutons « Plus de vidéos » et son logo
+   au survol, et un clic sur l'image lance ou met en pause. Absent des lecteurs des autres plateformes. */
+.yt-shield { position: absolute; inset: 0; cursor: default; }
+.player-stage.native .yt-shield { display: none; }
