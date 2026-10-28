@@ -202,6 +202,44 @@ impl Db {
         Ok(videos)
     }
 
+    /// La vidéo la plus récente de chaque chaîne (hors vidéos ignorées), les plus fraîches d'abord.
+    pub fn latest_videos(&self, limit: usize) -> R<Vec<Video>> {
+        let conn = self.lock();
+        let mut stmt = conn
+            .prepare(
+                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state
+                 FROM videos v JOIN channels c ON c.id = v.channel_id
+                 WHERE v.state != 'ignored'
+                 ORDER BY v.published DESC",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(Video {
+                    id: r.get(0)?,
+                    channel_id: r.get(1)?,
+                    channel_title: r.get(2)?,
+                    title: r.get(3)?,
+                    published: r.get(4)?,
+                    thumb: r.get(5)?,
+                    state: r.get(6)?,
+                })
+            })
+            .map_err(db_err)?;
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for video in rows {
+            let video = video.map_err(db_err)?;
+            if seen.insert(video.channel_id.clone()) {
+                out.push(video);
+                if out.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
     pub fn set_state(&self, id: &str, state: &str) -> R<()> {
         if !STATES.contains(&state) {
             return Err(format!("État inconnu : {state}"));
@@ -297,6 +335,20 @@ mod tests {
         let nouvelles = db.list_videos("new", 50).unwrap();
         assert_eq!(nouvelles.len(), 2);
         assert_eq!(nouvelles[0].id, "bbbbbbbbbbb", "tri du plus récent au plus ancien");
+    }
+
+    #[test]
+    fn derniere_video_de_chaque_chaine() {
+        let db = db_with_channel();
+        assert!(db.add_channel("UC2", "Autre chaîne", NOW).unwrap());
+        db.upsert_videos("UC1", &[video("aaaaaaaaaaa", 5), video("bbbbbbbbbbb", 2)], true, NOW).unwrap();
+        db.upsert_videos("UC2", &[video("ccccccccccc", 3), video("ddddddddddd", 1)], true, NOW).unwrap();
+        db.set_state("ddddddddddd", "ignored").unwrap();
+
+        let dernieres = db.latest_videos(10).unwrap();
+        let ids: Vec<_> = dernieres.iter().map(|v| v.id.as_str()).collect();
+        assert_eq!(ids, ["bbbbbbbbbbb", "ccccccccccc"], "une par chaîne, ignorées exclues, tri récent d'abord");
+        assert_eq!(db.latest_videos(1).unwrap().len(), 1);
     }
 
     #[test]

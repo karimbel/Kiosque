@@ -110,6 +110,12 @@ fn list_videos(state: State<'_, AppState>, status: String) -> Result<Vec<Video>,
     state.db.list_videos(&status, 300)
 }
 
+/// La dernière vidéo de chaque chaîne, vue ou non : sert quand « À voir » est vide.
+#[tauri::command]
+fn latest_videos(state: State<'_, AppState>) -> Result<Vec<Video>, String> {
+    state.db.latest_videos(24)
+}
+
 #[tauri::command]
 fn set_status(state: State<'_, AppState>, id: String, status: String) -> Result<(), String> {
     state.db.set_state(&id, &status)
@@ -123,7 +129,8 @@ fn mark_all_seen(state: State<'_, AppState>) -> Result<usize, String> {
 /// Ouvre la vidéo hors de la fenêtre (mpv ou navigateur) et la range comme « vue ».
 /// Le lecteur intégré est géré par l'interface ; sans choix explicite, le réglage « inapp »
 /// retombe ici sur le navigateur.
-/// Retourne le lecteur réellement utilisé : "mpv", "browser" ou "browser-fallback".
+/// Retourne le lecteur réellement utilisé : "mpv", "browser" ou "mpv-missing" (mpv introuvable,
+/// rien n'est ouvert et le réglage repasse sur le lecteur intégré).
 #[tauri::command]
 fn open_video(
     state: State<'_, AppState>,
@@ -161,8 +168,10 @@ fn open_video(
         match cmd.spawn() {
             Ok(_) => "mpv",
             Err(_) => {
-                open::that(&url).map_err(|err| format!("Impossible d'ouvrir le navigateur : {err}"))?;
-                "browser-fallback"
+                // mpv n'est pas installé : on revient au lecteur intégré pour la suite,
+                // et l'interface lit elle-même la vidéo dans la fenêtre.
+                state.db.set_setting("player", "inapp")?;
+                return Ok("mpv-missing".to_string());
             }
         }
     } else {
@@ -218,6 +227,7 @@ pub fn run() {
             remove_channel,
             refresh,
             list_videos,
+            latest_videos,
             set_status,
             mark_all_seen,
             open_video,
