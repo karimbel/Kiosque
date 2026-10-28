@@ -300,7 +300,7 @@ async function openPlayer(video) {
   ytTimer = setInterval(syncControls, 250);
 }
 
-/** Réduit le lecteur dans le coin bas gauche : la vidéo continue pendant la navigation. */
+/** Réduit le lecteur dans le coin bas droit : la vidéo continue pendant la navigation. */
 function minimizePlayer() {
   if (!playing || playerEl.hidden) return;
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -838,15 +838,18 @@ view.addEventListener('click', async (event) => {
       case 'go-channels':
         return switchTab('channels');
       case 'folder':
+        minimizePlayer();
         setFolder(button.dataset.folder);
         return renderVideos();
       case 'platform':
+        minimizePlayer();
         setPlatform(button.dataset.platform);
         return renderVideos();
       case 'open-repo':
         event.preventDefault();
         return await invoke('open_repo');
       case 'reset-filters':
+        minimizePlayer();
         setFolder('');
         setPlatform('');
         return renderVideos();
