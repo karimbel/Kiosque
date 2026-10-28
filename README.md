@@ -13,7 +13,7 @@ Application de bureau en Rust avec [Tauri 2](https://v2.tauri.app/). Aucun compt
 
 </details>
 
-Les aperçus montrent des chaînes d'exemple, avec des images de remplacement à la place des vraies miniatures. L'interface suit le thème de ton système, et la barre du haut se réduit avec la flèche à droite.
+Les aperçus montrent des chaînes d'exemple, dont les miniatures sont des dégradés de remplacement. L'interface suit le thème de ton système, et la barre du haut se réduit avec la flèche à droite.
 
 ## Obtenir l'application (GitHub)
 
