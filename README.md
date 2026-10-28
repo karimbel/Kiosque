@@ -6,6 +6,8 @@ Application de bureau en Rust avec [Tauri 2](https://v2.tauri.app/). Aucun compt
 
 ![Aperçu de Kiosque, thème clair](docs/apercu-clair.png)
 
+![Page Chaînes : dossiers, avatars et réglages](docs/apercu-chaines.png)
+
 <details>
 <summary>Thème sombre</summary>
 
@@ -13,7 +15,7 @@ Application de bureau en Rust avec [Tauri 2](https://v2.tauri.app/). Aucun compt
 
 </details>
 
-Les aperçus montrent des chaînes d'exemple, dont les miniatures sont des dégradés de remplacement. L'interface suit le thème de ton système, et la barre du haut se réduit avec la flèche à droite.
+Les aperçus montrent des chaînes d'exemple, dont les miniatures et les avatars sont des images de remplacement. L'interface suit le thème de ton système, et la barre du haut se réduit avec la flèche à droite.
 
 ## Télécharger
 
@@ -65,6 +67,7 @@ Sous Windows, `construire.bat` fabrique l'installeur avec ton Rust local (`src-t
 - **À voir** : les nouvelles vidéos, de la plus récente à la plus ancienne. Pour chacune : Regarder, Plus tard ou Ignorer. « Tout marquer comme vu » vide la boîte d'un coup.
 - **Plus tard / Vues** : les vidéos mises de côté et l'historique de ce que tu as ouvert.
 - **Lecture** : dans la fenêtre de Kiosque (lecteur YouTube avec les commandes de Kiosque, publicités possibles) ou dans ton navigateur, au choix dans Chaînes. Une vidéo dont l'auteur interdit l'intégration s'ouvre avec « Ouvrir dans le navigateur ».
+- **Plateformes** : YouTube par défaut. Dans Chaînes → Plateformes, tu peux activer PeerTube, Odysee, Vimeo et Dailymotion, puis coller l'adresse d'une chaîne. Ces vidéos se lisent avec le lecteur de leur plateforme. Twitch, Rumble ou Netflix ne proposent pas de flux public exploitable.
 
 À l'ajout d'une chaîne, ses vidéos de plus de 7 jours sont directement rangées dans « Vues » pour que la boîte de réception ne démarre pas pleine d'archives.
 

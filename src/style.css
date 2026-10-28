@@ -672,3 +672,8 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
   .player-info { flex-basis: 100%; order: 3; }
   .range.volume, .time { display: none; }
 }
+
+/* Plateformes autres que YouTube */
+.pf{font-size:.72rem;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--line,currentColor);color:var(--muted,inherit);white-space:nowrap}
+.player-stage.native .controls{display:none}
+.player-stage.native #yt-host iframe{width:100%;height:100%;border:0;display:block}

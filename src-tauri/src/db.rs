@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
 use crate::feed::ParsedVideo;
+use crate::providers;
 
 /// États d'une vidéo : à voir, plus tard, vue, ignorée.
 pub const STATES: [&str; 4] = ["new", "later", "seen", "ignored"];
@@ -28,6 +29,7 @@ pub struct Channel {
     pub description: Option<String>,
     /// Dossier choisi par l'utilisateur (proposé à l'import d'après la catégorie YouTube).
     pub category: Option<String>,
+    pub platform: String,
     pub new_count: i64,
 }
 
@@ -41,6 +43,17 @@ pub struct Video {
     pub thumb: Option<String>,
     pub state: String,
     pub category: Option<String>,
+    /// « youtube », « peertube », « odysee », « vimeo » ou « dailymotion ».
+    pub platform: String,
+    /// Lecteur intégrable de la plateforme (absent pour YouTube).
+    pub embed: Option<String>,
+}
+
+/// Complète une vidéo avec sa plateforme et l'adresse de son lecteur intégré.
+fn with_player(mut v: Video) -> Video {
+    v.platform = providers::platform_of(&v.id).key().to_string();
+    v.embed = providers::embed_url(&v.id);
+    v
 }
 
 pub struct Db {
@@ -82,6 +95,14 @@ impl Db {
         )
         .map_err(db_err)?;
         // Colonne ajoutée après la première version : on la crée si la base est plus ancienne.
+        let has_url = conn
+            .prepare("SELECT 1 FROM pragma_table_info('videos') WHERE name = 'url'")
+            .map_err(db_err)?
+            .exists([])
+            .map_err(db_err)?;
+        if !has_url {
+            conn.execute("ALTER TABLE videos ADD COLUMN url TEXT", []).map_err(db_err)?;
+        }
         for column in ["avatar", "description", "category"] {
             let exists = conn
                 .prepare("SELECT 1 FROM pragma_table_info('channels') WHERE name = ?1")
@@ -167,11 +188,15 @@ impl Db {
                     avatar: r.get(2)?,
                     description: r.get(3)?,
                     category: r.get(4)?,
+                    platform: String::new(),
                     new_count: r.get(5)?,
                 })
             })
             .map_err(db_err)?;
-        let channels = rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+        let mut channels = rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
+        for c in &mut channels {
+            c.platform = providers::platform_of(&c.id).key().to_string();
+        }
         Ok(channels)
     }
 
@@ -191,8 +216,8 @@ impl Db {
         {
             let mut insert = tx
                 .prepare(
-                    "INSERT OR IGNORE INTO videos(id, channel_id, title, published, thumb, state, fetched_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    "INSERT OR IGNORE INTO videos(id, channel_id, title, published, thumb, state, fetched_at, url)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 )
                 .map_err(db_err)?;
             let mut retitle = tx
@@ -205,7 +230,7 @@ impl Db {
                     "new"
                 };
                 let added = insert
-                    .execute(params![v.id, channel_id, v.title, v.published, v.thumb, state, now])
+                    .execute(params![v.id, channel_id, v.title, v.published, v.thumb, state, now, v.url])
                     .map_err(db_err)?;
                 if added == 0 {
                     retitle.execute(params![v.title, v.id]).map_err(db_err)?;
@@ -222,7 +247,7 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state, c.category
+                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state, c.category, v.url
                  FROM videos v JOIN channels c ON c.id = v.channel_id
                  WHERE v.state = ?1
                  ORDER BY v.published DESC
@@ -240,11 +265,13 @@ impl Db {
                     thumb: r.get(5)?,
                     state: r.get(6)?,
                     category: r.get(7)?,
+                    platform: String::new(),
+                    embed: None,
                 })
             })
             .map_err(db_err)?;
         let videos = rows.collect::<Result<Vec<_>, _>>().map_err(db_err)?;
-        Ok(videos)
+        Ok(videos.into_iter().map(with_player).collect())
     }
 
     /// La vidéo la plus récente de chaque chaîne (hors vidéos ignorées), les plus fraîches d'abord.
@@ -252,7 +279,7 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state, c.category
+                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state, c.category, v.url
                  FROM videos v JOIN channels c ON c.id = v.channel_id
                  WHERE v.state != 'ignored'
                  ORDER BY v.published DESC",
@@ -269,6 +296,8 @@ impl Db {
                     thumb: r.get(5)?,
                     state: r.get(6)?,
                     category: r.get(7)?,
+                    platform: String::new(),
+                    embed: None,
                 })
             })
             .map_err(db_err)?;
@@ -277,13 +306,23 @@ impl Db {
         for video in rows {
             let video = video.map_err(db_err)?;
             if seen.insert(video.channel_id.clone()) {
-                out.push(video);
+                out.push(with_player(video));
                 if out.len() >= limit {
                     break;
                 }
             }
         }
         Ok(out)
+    }
+
+    /// Adresse de la page d'une vidéo enregistrée (pour l'ouvrir dans le navigateur).
+    pub fn video_page(&self, id: &str) -> R<String> {
+        let stored: Option<String> = self
+            .lock()
+            .query_row("SELECT url FROM videos WHERE id = ?1", params![id], |r| r.get(0))
+            .ok()
+            .flatten();
+        Ok(providers::watch_url(id, stored.as_deref()))
     }
 
     pub fn set_state(&self, id: &str, state: &str) -> R<()> {
@@ -343,6 +382,7 @@ mod tests {
             title: format!("Titre {id}"),
             published: NOW - age_days * DAY,
             thumb: None,
+            url: None,
         }
     }
 

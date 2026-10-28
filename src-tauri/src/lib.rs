@@ -1,8 +1,10 @@
 mod db;
 mod feed;
+mod providers;
 mod resolve;
 
 use db::{Channel, Db, Video};
+use providers::Platform;
 use futures::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -32,6 +34,25 @@ struct RefreshReport {
 
 #[tauri::command]
 async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channel, String> {
+    // Une autre plateforme que YouTube ? Elle doit avoir été activée dans les réglages.
+    if let Some(found) = providers::detect(&input)? {
+        let active = providers::enabled_platforms(&state.db.get_setting("platforms")?.unwrap_or_default());
+        if !active.contains(&found.platform) {
+            let name = found.platform.label();
+            return Err(format!(
+                "Cette adresse est une chaîne {name}. Active {name} dans Chaînes → Plateformes pour la suivre."
+            ));
+        }
+        let id = match found.kind {
+            providers::Kind::Channel(id) => id,
+            providers::Kind::PeerTubeVideo { host, uuid } => {
+                providers::peertube_channel_of_video(&state.http, &host, &uuid)
+                    .await
+                    .map_err(|err| format!("Vidéo PeerTube introuvable ({err})."))?
+            }
+        };
+        return add_other_channel(&state, id).await;
+    }
     let id = resolve::resolve_channel_id(&state.http, &input).await?;
     let meta = feed::fetch_channel_feed(&state.http, &id)
         .await
@@ -55,6 +76,28 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
         }
     }
 
+    state
+        .db
+        .list_channels()?
+        .into_iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| "La chaîne est introuvable après son ajout.".to_string())
+}
+
+/// Ajoute une chaîne PeerTube, Odysee, Vimeo ou Dailymotion.
+async fn add_other_channel(state: &AppState, id: String) -> Result<Channel, String> {
+    let fetched = providers::fetch(&state.http, &id)
+        .await
+        .map_err(|err| format!("Cette chaîne est inaccessible ({err}). Vérifie l'adresse."))?;
+    if state.db.add_channel(&id, &fetched.title, now())? {
+        state.db.upsert_videos(&id, &fetched.videos, true, now())?;
+        state.db.set_profile(
+            &id,
+            fetched.avatar.as_deref(),
+            fetched.description.as_deref().unwrap_or(""),
+            None,
+        )?;
+    }
     state
         .db
         .list_channels()?
@@ -89,7 +132,13 @@ async fn refresh(state: State<'_, AppState>) -> Result<RefreshReport, String> {
     let results: Vec<_> = futures::stream::iter(channels.into_iter().map(|channel| {
         let http = http.clone();
         async move {
-            let result = feed::fetch_videos(&http, &channel.id, exclude_shorts).await;
+            let result = if providers::platform_of(&channel.id) == Platform::YouTube {
+                feed::fetch_videos(&http, &channel.id, exclude_shorts)
+                    .await
+                    .map(|f| f.videos)
+            } else {
+                providers::fetch(&http, &channel.id).await.map(|f| f.videos)
+            };
             (channel, result)
         }
     }))
@@ -102,7 +151,7 @@ async fn refresh(state: State<'_, AppState>) -> Result<RefreshReport, String> {
         .db
         .list_channels()?
         .into_iter()
-        .filter(|c| c.description.is_none())
+        .filter(|c| c.description.is_none() && c.platform == "youtube")
         .map(|c| c.id)
         .collect();
     let avatars: Vec<_> = futures::stream::iter(missing.into_iter().map(|id| {
@@ -125,7 +174,7 @@ async fn refresh(state: State<'_, AppState>) -> Result<RefreshReport, String> {
     let t = now();
     for (channel, result) in results {
         match result {
-            Ok(f) => match state.db.upsert_videos(&channel.id, &f.videos, false, t) {
+            Ok(videos) => match state.db.upsert_videos(&channel.id, &videos, false, t) {
                 Ok(n) => report.new_videos += n,
                 Err(err) => report.errors.push(format!("{} : {err}", channel.title)),
             },
@@ -161,17 +210,20 @@ fn mark_all_seen(state: State<'_, AppState>) -> Result<usize, String> {
 /// « Ouvrir dans le navigateur » et au réglage « Navigateur ».
 #[tauri::command]
 fn open_video(id: String, state: State<'_, AppState>) -> Result<(), String> {
-    if !feed::is_video_id(&id) {
+    if providers::platform_of(&id) == Platform::YouTube && !feed::is_video_id(&id) {
         return Err("Identifiant de vidéo invalide.".into());
     }
-    let url = format!("https://www.youtube.com/watch?v={id}");
+    let url = state.db.video_page(&id)?;
+    if !url.starts_with("https://") {
+        return Err("Adresse de la vidéo introuvable.".into());
+    }
     open::that(&url).map_err(|err| format!("Impossible d'ouvrir le navigateur : {err}"))?;
     state.db.set_state(&id, "seen")
 }
 
 // ---------- réglages ----------
 
-const SETTINGS: [(&str, &str); 2] = [("player", "inapp"), ("exclude_shorts", "1")];
+const SETTINGS: [(&str, &str); 3] = [("player", "inapp"), ("exclude_shorts", "1"), ("platforms", "")];
 
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, String> {
@@ -190,6 +242,9 @@ fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result
     }
     if key == "player" && !["inapp", "browser"].contains(&value.trim()) {
         return Err(format!("Lecteur inconnu : {value}"));
+    }
+    if key == "platforms" {
+        return state.db.set_setting(&key, &providers::normalize_platforms(&value));
     }
     state.db.set_setting(&key, value.trim())
 }

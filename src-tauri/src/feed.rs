@@ -12,6 +12,8 @@ pub struct ParsedVideo {
     /// Date de publication, en secondes Unix.
     pub published: i64,
     pub thumb: Option<String>,
+    /// Adresse de la page de la vidéo (autres plateformes que YouTube ; vide pour YouTube).
+    pub url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +78,7 @@ pub fn parse_feed(bytes: &[u8]) -> Result<ParsedFeed, String> {
             title: video_title,
             published,
             thumb,
+            url: None,
         });
     }
     Ok(ParsedFeed { title, videos })

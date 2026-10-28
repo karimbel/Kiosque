@@ -33,7 +33,7 @@ const app = {
   tab: 'new',
   channels: [],
   videos: [],
-  settings: { player: 'inapp', exclude_shorts: '1' },
+  settings: { player: 'inapp', exclude_shorts: '1', platforms: '' },
   autostart: false,
   folder: (() => { try { return localStorage.getItem('folder') || ''; } catch { return ''; } })(),
   busy: false,
@@ -218,6 +218,15 @@ async function openPlayer(video) {
     </div>`;
   playerEl.hidden = false;
   q('[data-player="close"]').focus();
+
+  // Autres plateformes : le lecteur de la plateforme, avec ses propres commandes.
+  if (video.embed) {
+    q('#player-stage').classList.add('native');
+    q('#yt-host').innerHTML = `<iframe src="${esc(video.embed)}" title="${esc(video.title)}"
+      allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen
+      referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    return;
+  }
 
   try {
     await loadYouTubeApi();
@@ -419,12 +428,12 @@ function actionsFor(tab) {
 
 function videoRow(v, thumbs, latest = false) {
   // Miniature fournie par le flux, sinon celle que YouTube publie pour chaque vidéo.
-  const src = v.thumb || `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`;
+  const src = v.thumb || (v.platform === 'youtube' ? `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg` : '');
   return `<li class="item${thumbs ? ' has-thumb' : ''}" data-id="${esc(v.id)}"${latest ? ' data-latest="1"' : ''}>
     ${thumbs ? `<button type="button" class="thumb-btn" data-act="watch" tabindex="-1" aria-hidden="true"><img class="thumb" src="${esc(src)}" alt="" loading="lazy" onerror="this.closest('.thumb-btn').remove()"></button>` : ''}
     <div>
       <h3 class="title" title="${esc(v.title)}">${esc(shortTitle(v.title))}</h3>
-      <p class="meta"><span class="who">${esc(v.channel_title)}</span><span>${esc(when(v.published))}</span></p>
+      <p class="meta"><span class="who">${esc(v.channel_title)}</span>${platformLabel(v.platform) ? `<span class="pf">${esc(platformLabel(v.platform))}</span>` : ''}<span>${esc(when(v.published))}</span></p>
       <div class="actions">${latest ? '<button type="button" class="primary" data-act="watch">Regarder</button>' : actionsFor(app.tab)}</div>
     </div>
   </li>`;
@@ -498,6 +507,15 @@ function avatar(channel) {
   return `<span class="avatar" style="background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}" aria-hidden="true">${esc(letter)}${img}</span>`;
 }
 
+const PLATFORMS = [
+  ['peertube', 'PeerTube', 'Vidéos libres, hébergées sur de nombreux sites.'],
+  ['odysee', 'Odysee', 'Chaînes Odysee (@Nom:c).'],
+  ['vimeo', 'Vimeo', 'Chaînes et comptes Vimeo.'],
+  ['dailymotion', 'Dailymotion', 'Chaînes Dailymotion.'],
+];
+const platformLabel = (key) => PLATFORMS.find((p) => p[0] === key)?.[1] ?? '';
+const activePlatforms = () => (app.settings.platforms || '').split(',').filter(Boolean);
+
 const PLAYER_HINTS = {
   inapp: 'Lecteur de YouTube dans la fenêtre. Des publicités peuvent s’afficher.',
   browser: 'La vidéo s’ouvre dans ton navigateur habituel.',
@@ -511,7 +529,7 @@ function renderChannels() {
   const card = (c) => `<li data-id="${esc(c.id)}">
         ${avatar(c)}
         <div class="info">
-          <span class="line"><span class="name">${esc(c.title)}</span>${c.new_count ? `<span class="pill">${c.new_count} à voir</span>` : ''}</span>
+          <span class="line"><span class="name">${esc(c.title)}</span>${platformLabel(c.platform) ? `<span class="pf">${esc(platformLabel(c.platform))}</span>` : ''}${c.new_count ? `<span class="pill">${c.new_count} à voir</span>` : ''}</span>
           ${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}
           <span class="folder-slot"><button type="button" class="folder-chip${c.category ? ' set' : ''}" data-act="edit-folder" title="Choisir le dossier de cette chaîne">${c.category ? esc(c.category) : '+ Dossier'}</button></span>
         </div>
@@ -545,7 +563,7 @@ function renderChannels() {
         <form id="add" class="add">
           <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true" focusable="false"><path d="M10 4v12M4 10h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           <label class="sr" for="channel-input">Chaîne à suivre</label>
-          <input id="channel-input" type="text" placeholder="Ajouter : @pseudo, adresse ou identifiant UC…" autocomplete="off" spellcheck="false">
+          <input id="channel-input" type="text" placeholder="Ajouter : @pseudo, adresse de chaîne…" autocomplete="off" spellcheck="false">
           <button type="submit" class="primary">Suivre</button>
         </form>
         ${list}
@@ -558,6 +576,12 @@ function renderChannels() {
             ${segment('inapp', 'Dans Kiosque')}${segment('browser', 'Navigateur')}
           </div>
           <p class="hint">${PLAYER_HINTS[player]}</p>
+        </section>
+        <section class="card">
+          <h2>Plateformes</h2>
+          ${toggle('pf-youtube', 'YouTube', 'Toujours actif (par défaut).', 'disabled', true)}
+          ${PLATFORMS.map(([key, label, help]) => toggle('pf-' + key, label, help, `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
+          <p class="hint">Colle ensuite l’adresse d’une chaîne de la plateforme dans « Suivre ».</p>
         </section>
         <section class="card">
           <h2>Affichage</h2>
@@ -787,6 +811,15 @@ view.addEventListener('change', async (event) => {
     }
     if (el.dataset.local === 'thumbs') {
       localStorage.setItem('thumbs', el.checked ? '1' : '0');
+      return;
+    }
+    if (el.dataset.platform) {
+      const set = new Set(activePlatforms());
+      if (el.checked) set.add(el.dataset.platform); else set.delete(el.dataset.platform);
+      const value = [...set].join(',');
+      await invoke('set_setting', { key: 'platforms', value });
+      app.settings.platforms = value;
+      setStatus(el.checked ? `${platformLabel(el.dataset.platform)} activé` : `${platformLabel(el.dataset.platform)} désactivé`);
       return;
     }
     const key = el.dataset.setting;
