@@ -449,6 +449,7 @@ async fn install_update_inner(app: &AppHandle, state: &AppState) -> Result<(), S
     }
 
     log_update(app, &format!("{} octets reçus", bytes.len()));
+    let _ = app.emit("update-stage", "install");
     if portable {
         // Windows laisse renommer un programme en cours d'exécution : l'ancien est mis de côté,
         // le nouveau prend sa place, puis l'ancien est supprimé au lancement suivant.
@@ -462,6 +463,7 @@ async fn install_update_inner(app: &AppHandle, state: &AppState) -> Result<(), S
             return Err(tr!("Écriture impossible ({err}).", "Write failed ({err})."));
         }
         log_update(app, &format!("ancien programme mis de côté, nouveau programme écrit : {}", target.display()));
+        let _ = app.emit("update-stage", "restart");
         if let Err(err) = std::process::Command::new(&target).spawn() {
             let _ = std::fs::remove_file(&target);
             let _ = std::fs::rename(&old, &exe);
@@ -469,6 +471,7 @@ async fn install_update_inner(app: &AppHandle, state: &AppState) -> Result<(), S
         }
         log_update(app, "nouveau programme lancé");
     } else {
+        let _ = app.emit("update-stage", "restart");
         let setup = std::env::temp_dir().join("Kiosque-mise-a-jour-setup.exe");
         std::fs::write(&setup, &bytes).map_err(|err| tr!("Écriture impossible ({err}).", "Write failed ({err})."))?;
         std::process::Command::new(&setup)

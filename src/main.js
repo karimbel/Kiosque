@@ -1053,7 +1053,7 @@ async function runInstall(version) {
   const bar = document.querySelector('#update-bar');
   const showing = (percent) => {
     text.textContent = percent == null
-      ? t('Mise à jour vers Kiosque {v} en cours…', { v: version })
+      ? t('Téléchargement de Kiosque {v}…', { v: version })
       : t('Téléchargement de Kiosque {v} : {p} %', { v: version, p: percent });
   };
   showing(null);
@@ -1061,19 +1061,28 @@ async function runInstall(version) {
   bar.hidden = false;
   box.hidden = false;
   box.classList.add('busy');
-  let stop = () => {};
+  const stops = [];
   try {
-    const off = await window.__TAURI__.event.listen('update-progress', (e) => {
+    const events = window.__TAURI__.event;
+    stops.push(await events.listen('update-progress', (e) => {
       bar.value = e.payload;
       showing(e.payload);
-    });
-    stop = off;
+    }));
+    stops.push(await events.listen('update-stage', (e) => {
+      if (e.payload === 'install') {
+        text.textContent = t('Installation de Kiosque {v}…', { v: version });
+        bar.removeAttribute('value'); // barre sans pourcentage : l'installation n'a pas de progression
+      } else if (e.payload === 'restart') {
+        text.textContent = t('Relance de Kiosque…');
+      }
+    }));
   } catch { /* sans événements, le texte « en cours » reste affiché */ }
   try {
     await invoke('install_update'); // relance Kiosque : on ne revient normalement pas ici
   } catch (err) {
-    stop();
+    stops.forEach((off) => off());
     bar.hidden = true;
+    bar.value = 0;
     box.classList.remove('busy');
     text.textContent = t('Kiosque {v} est disponible.', { v: version });
     setStatus(t('Mise à jour impossible : {err}', { err }), 'error');
