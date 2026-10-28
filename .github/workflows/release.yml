@@ -34,12 +34,28 @@ jobs:
         run: npx tauri icon app-icon.png
 
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
           releaseName: "Kiosque v__VERSION__"
-          releaseBody: "Télécharge le fichier Kiosque_…_x64-setup.exe dans la liste « Assets » ci-dessous, puis lance-le."
+          releaseBody: "Dans la liste « Assets » : Kiosque_…_x64-setup.exe (installation) ou Kiosque_…_portable.exe (aucune installation, il suffit de le lancer)."
           releaseDraft: true
           prerelease: false
           args: --bundles nsis
+
+      # Version portable : le programme seul, sans installation (Windows 10/11 fournit déjà WebView2).
+      - name: Ajouter la version portable à la release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.tauri.outputs.releaseId }}
+        run: |
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          FICHIER="Kiosque_${VERSION}_portable.exe"
+          cp src-tauri/target/release/kiosque.exe "$FICHIER"
+          gh api --method POST \
+            -H "Content-Type: application/octet-stream" \
+            "https://uploads.github.com/repos/${{ github.repository }}/releases/${RELEASE_ID}/assets?name=${FICHIER}" \
+            --input "$FICHIER"
