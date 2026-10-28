@@ -36,6 +36,7 @@ const app = {
   settings: { player: 'inapp', exclude_shorts: '1', platforms: '' },
   autostart: false,
   folder: (() => { try { return localStorage.getItem('folder') || ''; } catch { return ''; } })(),
+  sub: (() => { try { return localStorage.getItem('sub') || 'platforms'; } catch { return 'mine'; } })(),
   busy: false,
 };
 
@@ -553,6 +554,25 @@ function renderChannels() {
     `<label class="switch-row" for="${id}"><span class="switch-text"><span class="switch-label">${label}</span><span class="switch-help">${help}</span></span>
       <input type="checkbox" id="${id}" class="switch" ${attrs} ${on ? 'checked' : ''}></label>`;
 
+  const SUBS = [['platforms', 'Plateformes'], ['playback', 'Lecture'], ['system', 'Système']];
+  if (!SUBS.some(([k]) => k === app.sub)) app.sub = 'playback';
+
+  const panels = {
+    platforms: `
+      ${toggle('pf-youtube', 'YouTube', 'Toujours actif (par défaut).', 'disabled', true)}
+      ${PLATFORMS.map(([key, label, help]) => toggle('pf-' + key, label, help, `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
+      <p class="hint">Colle ensuite l’adresse d’une chaîne de la plateforme dans « Suivre ».</p>`,
+    playback: `
+      <div class="segmented" role="radiogroup" aria-label="Lecteur vidéo">
+        ${segment('inapp', 'Dans Kiosque')}${segment('browser', 'Navigateur')}
+      </div>
+      <p class="hint">${PLAYER_HINTS[player]}</p>
+      ${toggle('thumbs', 'Miniatures', 'Une image pour chaque vidéo.', 'data-local="thumbs"', showThumbs())}
+      ${toggle('shorts', 'Masquer les Shorts', 'Pris en compte à la prochaine actualisation.', 'data-setting="exclude_shorts"', s.exclude_shorts !== '0')}`,
+    system: `
+      ${toggle('autostart', 'Lancer au démarrage', 'Kiosque s’ouvre en même temps que ton ordinateur.', 'data-local="autostart"', app.autostart)}`,
+  };
+
   view.innerHTML = `
     <div class="manage">
       <section class="mine" aria-labelledby="mine-title">
@@ -569,32 +589,33 @@ function renderChannels() {
         ${list}
       </section>
 
-      <aside class="prefs" aria-label="Réglages">
-        <section class="card">
-          <h2>Lecture</h2>
-          <div class="segmented" role="radiogroup" aria-label="Lecteur vidéo">
-            ${segment('inapp', 'Dans Kiosque')}${segment('browser', 'Navigateur')}
-          </div>
-          <p class="hint">${PLAYER_HINTS[player]}</p>
-        </section>
-        <section class="card">
-          <h2>Plateformes</h2>
-          ${toggle('pf-youtube', 'YouTube', 'Toujours actif (par défaut).', 'disabled', true)}
-          ${PLATFORMS.map(([key, label, help]) => toggle('pf-' + key, label, help, `data-platform="${key}"`, activePlatforms().includes(key))).join('')}
-          <p class="hint">Colle ensuite l’adresse d’une chaîne de la plateforme dans « Suivre ».</p>
-        </section>
-        <section class="card">
-          <h2>Affichage</h2>
-          ${toggle('thumbs', 'Miniatures', 'Une image pour chaque vidéo.', 'data-local="thumbs"', showThumbs())}
-          ${toggle('shorts', 'Masquer les Shorts', 'Pris en compte à la prochaine actualisation.', 'data-setting="exclude_shorts"', s.exclude_shorts !== '0')}
-        </section>
-        <section class="card">
-          <h2>Système</h2>
-          ${toggle('autostart', 'Lancer au démarrage', 'Kiosque s’ouvre en même temps que ton ordinateur.', 'data-local="autostart"', app.autostart)}
-        </section>
+      <aside class="prefs card" aria-label="Réglages">
+        <div class="subtabs" role="tablist" aria-label="Réglages">
+          ${SUBS.map(([k, label]) => `<button type="button" role="tab" id="sub-${k}" data-sub="${k}" aria-selected="${app.sub === k}" tabindex="${app.sub === k ? 0 : -1}">${label}</button>`).join('')}
+        </div>
+        <div class="subpanel" role="tabpanel" aria-labelledby="sub-${app.sub}">${panels[app.sub]}</div>
       </aside>
     </div>`;
 }
+
+view.addEventListener('click', (event) => {
+  const tab = event.target.closest('[data-sub]');
+  if (!tab) return;
+  app.sub = tab.dataset.sub;
+  try { localStorage.setItem('sub', app.sub); } catch { /* facultatif */ }
+  const typed = document.querySelector('#channel-input')?.value ?? '';
+  renderChannels();
+  const input = document.querySelector('#channel-input');
+  if (input) input.value = typed;
+  document.querySelector(`#sub-${app.sub}`)?.focus();
+});
+view.addEventListener('keydown', (event) => {
+  const tab = event.target.closest('[data-sub]');
+  if (!tab || !['ArrowRight', 'ArrowLeft'].includes(event.key)) return;
+  const all = [...view.querySelectorAll('[data-sub]')];
+  const next = all[(all.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : all.length - 1)) % all.length];
+  next.click();
+});
 
 function render() {
   renderTabs();
