@@ -8,7 +8,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 struct AppState {
     db: Db,
@@ -233,9 +234,28 @@ fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result
     state.db.set_setting(&key, value.trim())
 }
 
+// ---------- lancement au démarrage de l'ordinateur ----------
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let launcher = app.autolaunch();
+    if enabled {
+        launcher.enable().map_err(|err| err.to_string())?;
+    } else {
+        launcher.disable().map_err(|err| err.to_string())?;
+    }
+    launcher.is_enabled().map_err(|err| err.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
             std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
@@ -258,6 +278,8 @@ pub fn run() {
             open_video,
             get_settings,
             set_setting,
+            get_autostart,
+            set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Kiosque");

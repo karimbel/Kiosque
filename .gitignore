@@ -5,3 +5,7 @@ dist/
 .DS_Store
 out/
 build.log
+
+# Outil local de publication (reste sur ce PC, pas dans le dépôt)
+publier.cmd
+publier.ps1

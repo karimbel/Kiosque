@@ -42,7 +42,7 @@ Un workflow GitHub (`.github/workflows/release.yml`) construit l'installeur et l
 2. Lance la construction : onglet **Actions → Construire Kiosque → Run workflow**. Compte une dizaine de minutes la première fois, moins ensuite.
 3. Va dans **Releases** : la release publiée contient `Kiosque_0.1.0_x64-setup.exe` (installeur) et `Kiosque_0.1.0_portable.exe` (aucune installation : tu le lances directement). Télécharge celui que tu préfères.
 
-Pour une nouvelle version, change `version` dans `src-tauri/tauri.conf.json`, envoie les changements (`git add . && git commit -m "…" && git push`), puis relance le workflow, ou pousse une étiquette : `git tag v0.2.0 && git push --tags`.
+Les versions s'incrémentent toutes seules : à chaque `publier.cmd` qui envoie un changement du programme, le dernier chiffre augmente (0.1.0 → 0.1.1) dans `tauri.conf.json`, `package.json` et `Cargo.toml`, et GitHub publie une release portant ce numéro. Pour changer le début du numéro (0.2.0, 1.0.0), modifie `version` à la main dans `src-tauri/tauri.conf.json` : `publier.cmd` repartira de là.
 
 L'installeur n'est pas signé : Windows (SmartScreen) affiche un avertissement au premier lancement. Clique sur « Informations complémentaires », puis « Exécuter quand même ».
 

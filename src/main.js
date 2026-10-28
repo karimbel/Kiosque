@@ -34,6 +34,7 @@ const app = {
   channels: [],
   videos: [],
   settings: { player: 'inapp', mpv_path: 'mpv', exclude_shorts: '1' },
+  autostart: false,
   busy: false,
 };
 
@@ -518,6 +519,10 @@ function renderChannels() {
           ${toggle('thumbs', 'Miniatures', 'Une image pour chaque vidéo.', 'data-local="thumbs"', showThumbs())}
           ${toggle('shorts', 'Masquer les Shorts', 'Pris en compte à la prochaine actualisation.', 'data-setting="exclude_shorts"', s.exclude_shorts !== '0')}
         </section>
+        <section class="card">
+          <h2>Système</h2>
+          ${toggle('autostart', 'Lancer au démarrage', 'Kiosque s’ouvre en même temps que ton ordinateur.', 'data-local="autostart"', app.autostart)}
+        </section>
       </aside>
     </div>`;
 }
@@ -674,6 +679,16 @@ view.addEventListener('submit', async (event) => {
 view.addEventListener('change', async (event) => {
   const el = event.target;
   try {
+    if (el.dataset.local === 'autostart') {
+      try {
+        app.autostart = await invoke('set_autostart', { enabled: el.checked });
+        setStatus(app.autostart ? 'Kiosque se lancera au démarrage' : 'Lancement au démarrage désactivé');
+      } catch (err) {
+        el.checked = !el.checked;
+        setStatus(String(err), 'error');
+      }
+      return;
+    }
     if (el.dataset.local === 'thumbs') {
       localStorage.setItem('thumbs', el.checked ? '1' : '0');
       return;
@@ -700,6 +715,7 @@ refreshBtn.addEventListener('click', refresh);
 (async function init() {
   try {
     app.settings = await invoke('get_settings');
+    app.autostart = await invoke('get_autostart').catch(() => false);
     await loadChannels();
     await loadVideos();
     render();
