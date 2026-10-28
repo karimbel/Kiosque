@@ -448,11 +448,16 @@ function renderVideos() {
 }
 
 const AVATAR_COLORS = ['#e4572e', '#0f766e', '#b7791f', '#6d28d9', '#1d4e89', '#4d7c0f', '#be185d'];
-function avatar(title) {
+function avatar(channel) {
+  const title = channel.title;
   let h = 0;
   for (const ch of title) h = (h * 31 + ch.codePointAt(0)) >>> 0;
   const letter = [...title.trim()][0]?.toUpperCase() ?? '?';
-  return `<span class="avatar" style="background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}" aria-hidden="true">${esc(letter)}</span>`;
+  // L'initiale sert de repli : l'image la recouvre, et disparaît si elle ne charge pas.
+  const img = channel.avatar
+    ? `<img src="${esc(channel.avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`
+    : '';
+  return `<span class="avatar" style="background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}" aria-hidden="true">${esc(letter)}${img}</span>`;
 }
 
 const PLAYER_HINTS = {
@@ -468,10 +473,10 @@ function renderChannels() {
 
   const list = n
     ? `<ul class="channels">${app.channels.map((c) => `<li data-id="${esc(c.id)}">
-        ${avatar(c.title)}
+        ${avatar(c)}
         <div class="info">
-          <span class="name">${esc(c.title)}</span>
-          <span class="sub${c.new_count ? ' has-new' : ''}">${c.new_count ? `${c.new_count} à voir` : 'Rien de nouveau'}</span>
+          <span class="line"><span class="name">${esc(c.title)}</span>${c.new_count ? `<span class="pill">${c.new_count} à voir</span>` : ''}</span>
+          ${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}
         </div>
         <button type="button" class="quiet remove" data-act="remove-channel" aria-label="Retirer ${esc(c.title)}">Retirer</button>
       </li>`).join('')}</ul>`

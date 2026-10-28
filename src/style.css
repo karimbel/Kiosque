@@ -359,6 +359,8 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 }
 .channels li:hover { border-color: var(--muted); }
 .avatar {
+  position: relative;
+  overflow: hidden;
   flex: none;
   display: grid;
   place-items: center;
@@ -369,11 +371,24 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
   font-size: 20px;
   font-weight: 700;
 }
+.avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .channels .name { font-weight: 600; font-size: 16px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.channels .sub { font-size: 14px; color: var(--muted); }
-.channels .sub.has-new { color: var(--accent); font-weight: 600; }
-.channels .remove { flex: none; opacity: 0; padding: 6px 10px; font-size: 14px; }
+.channels .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pill { flex: none; padding: 0 8px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; line-height: 1.6; }
+.channels .desc {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+.channels li { position: relative; }
+/* « Retirer » se superpose à la carte au survol : il ne réserve pas de place. */
+.channels .remove { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0; padding: 6px 12px; font-size: 14px; background: var(--paper); border: 1px solid var(--line); }
 .channels li:hover .remove, .channels li:focus-within .remove, .channels .remove:focus-visible { opacity: 1; }
 @media (hover: none) { .channels .remove { opacity: 1; } }
 

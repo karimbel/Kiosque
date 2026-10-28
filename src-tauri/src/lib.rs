@@ -49,6 +49,10 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
             Err(_) => meta.videos,
         };
         state.db.upsert_videos(&id, &videos, true, now())?;
+        // Avatar et descriptif : facultatifs, un échec n'empêche pas d'ajouter la chaîne.
+        if let Some(p) = resolve::fetch_profile(&state.http, &id).await {
+            state.db.set_profile(&id, p.avatar.as_deref(), &p.description)?;
+        }
     }
 
     state
@@ -87,6 +91,27 @@ async fn refresh(state: State<'_, AppState>) -> Result<RefreshReport, String> {
     .buffer_unordered(6)
     .collect()
     .await;
+
+    // Chaînes sans profil enregistré (suivies avant les avatars, ou page injoignable) : on le récupère.
+    let missing: Vec<String> = state
+        .db
+        .list_channels()?
+        .into_iter()
+        .filter(|c| c.description.is_none())
+        .map(|c| c.id)
+        .collect();
+    let avatars: Vec<_> = futures::stream::iter(missing.into_iter().map(|id| {
+        let http = http.clone();
+        async move { (id.clone(), resolve::fetch_profile(&http, &id).await) }
+    }))
+    .buffer_unordered(4)
+    .collect()
+    .await;
+    for (id, profile) in avatars {
+        if let Some(p) = profile {
+            let _ = state.db.set_profile(&id, p.avatar.as_deref(), &p.description);
+        }
+    }
 
     let mut report = RefreshReport {
         new_videos: 0,

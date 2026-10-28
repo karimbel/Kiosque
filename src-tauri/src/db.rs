@@ -24,6 +24,8 @@ fn db_err(err: rusqlite::Error) -> String {
 pub struct Channel {
     pub id: String,
     pub title: String,
+    pub avatar: Option<String>,
+    pub description: Option<String>,
     pub new_count: i64,
 }
 
@@ -76,6 +78,18 @@ impl Db {
              );",
         )
         .map_err(db_err)?;
+        // Colonne ajoutée après la première version : on la crée si la base est plus ancienne.
+        for column in ["avatar", "description"] {
+            let exists = conn
+                .prepare("SELECT 1 FROM pragma_table_info('channels') WHERE name = ?1")
+                .map_err(db_err)?
+                .exists([column])
+                .map_err(db_err)?;
+            if !exists {
+                conn.execute(&format!("ALTER TABLE channels ADD COLUMN {column} TEXT"), [])
+                    .map_err(db_err)?;
+            }
+        }
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -101,6 +115,17 @@ impl Db {
         Ok(added > 0)
     }
 
+    /// Enregistre l'avatar (s'il y en a un) et le descriptif ; `description` vide = « consulté, aucun ».
+    pub fn set_profile(&self, id: &str, avatar: Option<&str>, description: &str) -> R<()> {
+        self.lock()
+            .execute(
+                "UPDATE channels SET avatar = COALESCE(?2, avatar), description = ?3 WHERE id = ?1",
+                params![id, avatar, description],
+            )
+            .map_err(db_err)?;
+        Ok(())
+    }
+
     pub fn remove_channel(&self, id: &str) -> R<()> {
         self.lock()
             .execute("DELETE FROM channels WHERE id = ?1", params![id])
@@ -112,7 +137,7 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT c.id, c.title, COALESCE(SUM(v.state = 'new'), 0)
+                "SELECT c.id, c.title, c.avatar, c.description, COALESCE(SUM(v.state = 'new'), 0)
                  FROM channels c LEFT JOIN videos v ON v.channel_id = c.id
                  GROUP BY c.id
                  ORDER BY c.title COLLATE NOCASE",
@@ -123,7 +148,9 @@ impl Db {
                 Ok(Channel {
                     id: r.get(0)?,
                     title: r.get(1)?,
-                    new_count: r.get(2)?,
+                    avatar: r.get(2)?,
+                    description: r.get(3)?,
+                    new_count: r.get(4)?,
                 })
             })
             .map_err(db_err)?;
@@ -349,6 +376,34 @@ mod tests {
         let ids: Vec<_> = dernieres.iter().map(|v| v.id.as_str()).collect();
         assert_eq!(ids, ["bbbbbbbbbbb", "ccccccccccc"], "une par chaîne, ignorées exclues, tri récent d'abord");
         assert_eq!(db.latest_videos(1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ancienne_base_sans_colonne_avatar() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE channels (id TEXT PRIMARY KEY, title TEXT NOT NULL, added_at INTEGER NOT NULL);
+             INSERT INTO channels VALUES ('UC1', 'Ancienne', 1);",
+        )
+        .unwrap();
+        let db = Db::init(conn).unwrap();
+        let chaines = db.list_channels().unwrap();
+        assert_eq!(chaines.len(), 1);
+        assert_eq!(chaines[0].avatar, None);
+    }
+
+    #[test]
+    fn avatar_enregistre_et_liste() {
+        let db = db_with_channel();
+        assert_eq!(db.list_channels().unwrap()[0].avatar, None);
+        assert_eq!(db.list_channels().unwrap()[0].description, None);
+        db.set_profile("UC1", Some("https://yt3.googleusercontent.com/abc=s96"), "Un descriptif").unwrap();
+        let c = &db.list_channels().unwrap()[0];
+        assert_eq!(c.avatar.as_deref(), Some("https://yt3.googleusercontent.com/abc=s96"));
+        assert_eq!(c.description.as_deref(), Some("Un descriptif"));
+        // Une page sans avatar ne retire pas celui qu'on avait.
+        db.set_profile("UC1", None, "").unwrap();
+        assert!(db.list_channels().unwrap()[0].avatar.is_some());
     }
 
     #[test]
