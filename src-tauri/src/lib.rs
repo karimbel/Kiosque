@@ -6,7 +6,6 @@ use db::{Channel, Db, Video};
 use futures::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
@@ -52,7 +51,7 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
         state.db.upsert_videos(&id, &videos, true, now())?;
         // Avatar et descriptif : facultatifs, un échec n'empêche pas d'ajouter la chaîne.
         if let Some(p) = resolve::fetch_profile(&state.http, &id).await {
-            state.db.set_profile(&id, p.avatar.as_deref(), &p.description)?;
+            state.db.set_profile(&id, p.avatar.as_deref(), &p.description, p.genre.as_deref())?;
         }
     }
 
@@ -67,6 +66,11 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
 #[tauri::command]
 fn list_channels(state: State<'_, AppState>) -> Result<Vec<Channel>, String> {
     state.db.list_channels()
+}
+
+#[tauri::command]
+fn set_channel_category(state: State<'_, AppState>, id: String, category: String) -> Result<(), String> {
+    state.db.set_category(&id, &category)
 }
 
 #[tauri::command]
@@ -110,7 +114,7 @@ async fn refresh(state: State<'_, AppState>) -> Result<RefreshReport, String> {
     .await;
     for (id, profile) in avatars {
         if let Some(p) = profile {
-            let _ = state.db.set_profile(&id, p.avatar.as_deref(), &p.description);
+            let _ = state.db.set_profile(&id, p.avatar.as_deref(), &p.description, p.genre.as_deref());
         }
     }
 
@@ -152,66 +156,22 @@ fn mark_all_seen(state: State<'_, AppState>) -> Result<usize, String> {
     state.db.mark_all_seen()
 }
 
-/// Ouvre la vidéo hors de la fenêtre (mpv ou navigateur) et la range comme « vue ».
-/// Le lecteur intégré est géré par l'interface ; sans choix explicite, le réglage « inapp »
-/// retombe ici sur le navigateur.
-/// Retourne le lecteur réellement utilisé : "mpv", "browser" ou "mpv-missing" (mpv introuvable,
-/// rien n'est ouvert et le réglage repasse sur le lecteur intégré).
+/// Ouvre la vidéo dans le navigateur et la range comme « vue ».
+/// Le lecteur intégré est géré par l'interface : cette commande ne sert qu'au bouton
+/// « Ouvrir dans le navigateur » et au réglage « Navigateur ».
 #[tauri::command]
-fn open_video(
-    state: State<'_, AppState>,
-    id: String,
-    player: Option<String>,
-) -> Result<String, String> {
+fn open_video(id: String, state: State<'_, AppState>) -> Result<(), String> {
     if !feed::is_video_id(&id) {
         return Err("Identifiant de vidéo invalide.".into());
     }
     let url = format!("https://www.youtube.com/watch?v={id}");
-    let player = match player {
-        Some(p) => p,
-        None => state
-            .db
-            .get_setting("player")?
-            .unwrap_or_else(|| "inapp".into()),
-    };
-
-    let used = if player == "mpv" {
-        let bin = state
-            .db
-            .get_setting("mpv_path")?
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "mpv".into());
-        let mut cmd = Command::new(bin.trim());
-        cmd.arg(&url)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-        match cmd.spawn() {
-            Ok(_) => "mpv",
-            Err(_) => {
-                // mpv n'est pas installé : on revient au lecteur intégré pour la suite,
-                // et l'interface lit elle-même la vidéo dans la fenêtre.
-                state.db.set_setting("player", "inapp")?;
-                return Ok("mpv-missing".to_string());
-            }
-        }
-    } else {
-        open::that(&url).map_err(|err| format!("Impossible d'ouvrir le navigateur : {err}"))?;
-        "browser"
-    };
-
-    state.db.set_state(&id, "seen")?;
-    Ok(used.to_string())
+    open::that(&url).map_err(|err| format!("Impossible d'ouvrir le navigateur : {err}"))?;
+    state.db.set_state(&id, "seen")
 }
 
 // ---------- réglages ----------
 
-const SETTINGS: [(&str, &str); 3] = [("player", "inapp"), ("mpv_path", "mpv"), ("exclude_shorts", "1")];
+const SETTINGS: [(&str, &str); 2] = [("player", "inapp"), ("exclude_shorts", "1")];
 
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, String> {
@@ -228,7 +188,7 @@ fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result
     if !SETTINGS.iter().any(|(k, _)| *k == key) {
         return Err(format!("Réglage inconnu : {key}"));
     }
-    if key == "player" && !["inapp", "browser", "mpv"].contains(&value.trim()) {
+    if key == "player" && !["inapp", "browser"].contains(&value.trim()) {
         return Err(format!("Lecteur inconnu : {value}"));
     }
     state.db.set_setting(&key, value.trim())
@@ -270,6 +230,7 @@ pub fn run() {
             add_channel,
             list_channels,
             remove_channel,
+            set_channel_category,
             refresh,
             list_videos,
             latest_videos,

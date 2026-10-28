@@ -33,8 +33,9 @@ const app = {
   tab: 'new',
   channels: [],
   videos: [],
-  settings: { player: 'inapp', mpv_path: 'mpv', exclude_shorts: '1' },
+  settings: { player: 'inapp', exclude_shorts: '1' },
   autostart: false,
+  folder: (() => { try { return localStorage.getItem('folder') || ''; } catch { return ''; } })(),
   busy: false,
 };
 
@@ -429,23 +430,59 @@ function videoRow(v, thumbs, latest = false) {
   </li>`;
 }
 
+// ---------- dossiers ----------
+
+const folderNames = () =>
+  [...new Set(app.channels.map((c) => c.category).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'fr'));
+
+function currentFolder() {
+  if (app.folder && !folderNames().includes(app.folder)) setFolder('');
+  return app.folder;
+}
+
+function setFolder(name) {
+  app.folder = name;
+  try { localStorage.setItem('folder', name); } catch { /* sans mémoire, le filtre repart de « Tous » */ }
+}
+
+function folderBar(items) {
+  const names = folderNames();
+  if (!names.length) return '';
+  const active = currentFolder();
+  const chip = (name, label, count) =>
+    `<button type="button" class="chip" data-act="folder" data-folder="${esc(name)}" aria-pressed="${active === name}">${esc(label)}<span class="chip-count">${count}</span></button>`;
+  return `<div class="folders" role="group" aria-label="Dossiers">${chip('', 'Tous', items.length)}${names
+    .map((n) => chip(n, n, items.filter((v) => v.category === n).length))
+    .join('')}</div>`;
+}
+
+const inFolder = (v) => !currentFolder() || v.category === currentFolder();
+
 function renderVideos() {
+  const thumbs = showThumbs();
   if (!app.videos.length) {
-    const thumbsOn = showThumbs();
-    const latest = app.latest?.length
+    const latestAll = app.latest ?? [];
+    const latest = latestAll.length
       ? `<section class="latest" aria-labelledby="latest-title">
           <h2 id="latest-title">Dernières vidéos de tes chaînes</h2>
-          <ul class="feed${thumbsOn ? ' cards' : ''}">${app.latest.map((v) => videoRow(v, thumbsOn, true)).join('')}</ul>
+          ${folderBar(latestAll)}
+          <ul class="feed${thumbs ? ' cards' : ''}">${latestAll.filter(inFolder).map((v) => videoRow(v, thumbs, true)).join('')}</ul>
         </section>`
       : '';
     view.innerHTML = emptyState() + latest;
     return;
   }
-  const thumbs = showThumbs();
-  const bar = app.tab === 'new'
+  const shown = app.videos.filter(inFolder);
+  // « Tout marquer comme vu » concerne toute la boîte : on le masque quand un dossier filtre la liste.
+  const bar = app.tab === 'new' && shown.length && !currentFolder()
     ? '<div class="bar"><button type="button" class="quiet" data-act="all-seen">Tout marquer comme vu</button></div>'
     : '';
-  view.innerHTML = `${bar}<ul class="feed${thumbs ? ' cards' : ''}">${app.videos.map((v) => videoRow(v, thumbs)).join('')}</ul>`;
+  const body = shown.length
+    ? `<ul class="feed${thumbs ? ' cards' : ''}">${shown.map((v) => videoRow(v, thumbs)).join('')}</ul>`
+    : `<div class="empty compact"><h2>Rien ici dans « ${esc(currentFolder())} »</h2>
+        <p>Les autres dossiers ont encore des vidéos.</p>
+        <button type="button" class="primary" data-act="folder" data-folder="">Voir tous les dossiers</button></div>`;
+  view.innerHTML = `${folderBar(app.videos)}${bar}${body}`;
 }
 
 const AVATAR_COLORS = ['#e4572e', '#0f766e', '#b7791f', '#6d28d9', '#1d4e89', '#4d7c0f', '#be185d'];
@@ -464,23 +501,32 @@ function avatar(channel) {
 const PLAYER_HINTS = {
   inapp: 'Lecteur de YouTube dans la fenêtre. Des publicités peuvent s’afficher.',
   browser: 'La vidéo s’ouvre dans ton navigateur habituel.',
-  mpv: 'Pour utilisateurs avancés : mpv est un lecteur gratuit à installer à part (avec yt-dlp). Si tu ne sais pas ce que c’est, choisis Kiosque.',
 };
 
 function renderChannels() {
   const s = app.settings;
-  const player = ['inapp', 'browser', 'mpv'].includes(s.player) ? s.player : 'inapp';
+  const player = s.player === 'browser' ? 'browser' : 'inapp';
   const n = app.channels.length;
 
-  const list = n
-    ? `<ul class="channels">${app.channels.map((c) => `<li data-id="${esc(c.id)}">
+  const card = (c) => `<li data-id="${esc(c.id)}">
         ${avatar(c)}
         <div class="info">
           <span class="line"><span class="name">${esc(c.title)}</span>${c.new_count ? `<span class="pill">${c.new_count} à voir</span>` : ''}</span>
           ${c.description ? `<span class="desc">${esc(c.description)}</span>` : ''}
+          <span class="folder-slot"><button type="button" class="folder-chip${c.category ? ' set' : ''}" data-act="edit-folder" title="Choisir le dossier de cette chaîne">${c.category ? esc(c.category) : '+ Dossier'}</button></span>
         </div>
-        <button type="button" class="quiet remove" data-act="remove-channel" aria-label="Retirer ${esc(c.title)}">Retirer</button>
-      </li>`).join('')}</ul>`
+        <button type="button" class="remove" data-act="remove-channel" aria-label="Retirer ${esc(c.title)}" title="Retirer cette chaîne">
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 2.5l7 7m0-7l-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </li>`;
+  const names = folderNames();
+  const groups = names.length
+    ? [...names.map((name) => [name, app.channels.filter((c) => c.category === name)]),
+       ['', app.channels.filter((c) => !c.category)]].filter(([, list]) => list.length)
+    : [['', app.channels]];
+  const list = n
+    ? groups.map(([name, items]) => `${names.length ? `<h3 class="group">${name ? esc(name) : 'Sans dossier'}<span class="note">${items.length}</span></h3>` : ''}
+        <ul class="channels">${items.map(card).join('')}</ul>`).join('')
     : '<div class="empty-small"><img src="logo.svg" alt="" width="72" height="72"><h3>Aucune chaîne pour l’instant</h3><p>Colle l’adresse d’une chaîne, son @pseudo ou un identifiant commençant par UC, puis clique sur « Suivre ».</p></div>';
 
   const segment = (value, label) =>
@@ -509,10 +555,9 @@ function renderChannels() {
         <section class="card">
           <h2>Lecture</h2>
           <div class="segmented" role="radiogroup" aria-label="Lecteur vidéo">
-            ${segment('inapp', 'Kiosque')}${segment('browser', 'Navigateur')}${segment('mpv', 'mpv')}
+            ${segment('inapp', 'Dans Kiosque')}${segment('browser', 'Navigateur')}
           </div>
           <p class="hint">${PLAYER_HINTS[player]}</p>
-          ${player === 'mpv' ? `<label class="path-label" for="mpv-path">Chemin de mpv</label><input id="mpv-path" class="text" type="text" value="${esc(s.mpv_path)}" data-setting="mpv_path" spellcheck="false">` : ''}
         </section>
         <section class="card">
           <h2>Affichage</h2>
@@ -603,6 +648,22 @@ view.addEventListener('click', async (event) => {
     switch (button.dataset.act) {
       case 'go-channels':
         return switchTab('channels');
+      case 'folder':
+        setFolder(button.dataset.folder);
+        return renderVideos();
+      case 'edit-folder': {
+        const channel = app.channels.find((c) => c.id === li.dataset.id);
+        const slot = li.querySelector('.folder-slot');
+        slot.innerHTML = `<form class="folder-edit" data-id="${esc(channel.id)}">
+          <input type="text" list="folder-list" maxlength="40" autocomplete="off" spellcheck="false"
+                 value="${esc(channel.category ?? '')}" placeholder="Nom du dossier" aria-label="Dossier de ${esc(channel.title)}">
+          <datalist id="folder-list">${folderNames().map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
+        </form>`;
+        const input = slot.querySelector('input');
+        input.focus();
+        input.select();
+        return;
+      }
       case 'watch': {
         const id = li.dataset.id;
         const isLatest = li.dataset.latest === '1';
@@ -610,17 +671,11 @@ view.addEventListener('click', async (event) => {
           ?? { id, title: '', channel_title: '' };
         setStatus('');
 
-        // Lecteur extérieur (navigateur, mpv). Si mpv n'est pas installé, Kiosque revient
-        // tout seul à son lecteur intégré, sans rien ouvrir d'autre.
-        if (app.settings.player !== 'inapp') {
-          const used = await invoke('open_video', { id });
-          if (used === 'mpv-missing') {
-            app.settings.player = 'inapp';
-            setStatus('mpv n’est pas installé : la vidéo se lit dans Kiosque.');
-          } else {
-            if (isLatest || app.tab === 'seen') return;
-            return dismissRow(li);
-          }
+        // Réglage « Navigateur » : la vidéo s'ouvre hors de Kiosque.
+        if (app.settings.player === 'browser') {
+          await invoke('open_video', { id });
+          if (isLatest || app.tab === 'seen') return;
+          return dismissRow(li);
         }
 
         // Lecteur intégré. Une vidéo de « Dernières vidéos » garde son état.
@@ -645,7 +700,21 @@ view.addEventListener('click', async (event) => {
         return render();
       }
       case 'remove-channel': {
-        if (!confirmClick(button, 'Confirmer ?')) return;
+        // Confirmation dans la carte : on retire la chaîne seulement après un second clic explicite.
+        const name = li.querySelector('.name')?.textContent ?? 'cette chaîne';
+        const box = document.createElement('div');
+        box.className = 'confirm';
+        box.setAttribute('role', 'alertdialog');
+        box.innerHTML = `<span>Retirer « ${esc(name)} » ?</span>
+          <button type="button" class="danger" data-act="remove-confirm">Retirer</button>
+          <button type="button" class="quiet" data-act="remove-cancel">Annuler</button>`;
+        li.append(box);
+        box.querySelector('.quiet').focus();
+        return;
+      }
+      case 'remove-cancel':
+        return li.querySelector('.confirm')?.remove();
+      case 'remove-confirm': {
         await invoke('remove_channel', { id: li.dataset.id });
         await loadChannels();
         return render();
@@ -656,7 +725,20 @@ view.addEventListener('click', async (event) => {
   }
 });
 
+let folderCancelled = false;
 view.addEventListener('submit', async (event) => {
+  if (event.target.classList.contains('folder-edit')) {
+    event.preventDefault();
+    const form = event.target;
+    try {
+      await invoke('set_channel_category', { id: form.dataset.id, category: form.querySelector('input').value });
+      await loadChannels();
+    } catch (err) {
+      setStatus(String(err), 'error');
+    }
+    render();
+    return;
+  }
   if (event.target.id !== 'add') return;
   event.preventDefault();
   const input = document.querySelector('#channel-input');
@@ -674,6 +756,20 @@ view.addEventListener('submit', async (event) => {
     setStatus(String(err), 'error');
     submit.disabled = false;
   }
+});
+
+view.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && event.target.closest?.('.folder-edit')) {
+    event.stopPropagation();
+    folderCancelled = true;
+    render();
+  }
+});
+view.addEventListener('focusout', (event) => {
+  const form = event.target.closest?.('.folder-edit');
+  if (!form) return;
+  if (folderCancelled) { folderCancelled = false; return; }
+  if (form.isConnected) form.requestSubmit();
 });
 
 view.addEventListener('change', async (event) => {
@@ -715,6 +811,7 @@ refreshBtn.addEventListener('click', refresh);
 (async function init() {
   try {
     app.settings = await invoke('get_settings');
+    if (app.settings.player !== 'browser') app.settings.player = 'inapp'; // anciens réglages (mpv) : lecteur intégré
     app.autostart = await invoke('get_autostart').catch(() => false);
     await loadChannels();
     await loadVideos();

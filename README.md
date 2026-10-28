@@ -64,7 +64,7 @@ Sous Windows, `construire.bat` fabrique l'installeur avec ton Rust local (`src-t
 - **Chaînes** : colle une adresse de chaîne, un `@pseudo` ou un identifiant `UC…`, puis « Suivre ». Coller l'adresse d'une vidéo fonctionne aussi : Kiosque suit sa chaîne.
 - **À voir** : les nouvelles vidéos, de la plus récente à la plus ancienne. Pour chacune : Regarder, Plus tard ou Ignorer. « Tout marquer comme vu » vide la boîte d'un coup.
 - **Plus tard / Vues** : les vidéos mises de côté et l'historique de ce que tu as ouvert.
-- **Lecture** : dans la fenêtre de Kiosque (lecteur YouTube intégré, publicités possibles), dans le navigateur, ou dans [mpv](https://mpv.io) (sans publicité ni compte, nécessite aussi [yt-dlp](https://github.com/yt-dlp/yt-dlp)). Si mpv est introuvable, Kiosque bascule sur le navigateur et te le dit. Une vidéo qui interdit l'intégration s'ouvre avec « Ouvrir dans le navigateur ».
+- **Lecture** : dans la fenêtre de Kiosque (lecteur YouTube avec les commandes de Kiosque, publicités possibles) ou dans ton navigateur, au choix dans Chaînes. Une vidéo dont l'auteur interdit l'intégration s'ouvre avec « Ouvrir dans le navigateur ».
 
 À l'ajout d'une chaîne, ses vidéos de plus de 7 jours sont directement rangées dans « Vues » pour que la boîte de réception ne démarre pas pleine d'archives.
 

@@ -293,6 +293,24 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 .latest h2 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
 .latest .feed.cards { padding-top: 16px; }
 
+/* Dossiers : filtre au-dessus des listes de vidéos. */
+.folders { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 0 4px; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 15px;
+  color: var(--muted);
+}
+.chip:hover:not(:disabled) { color: var(--ink); }
+.chip[aria-pressed="true"],
+.chip[aria-pressed="true"]:hover:not(:disabled) { background: var(--ink); border-color: var(--ink); color: var(--paper); font-weight: 600; }
+.chip-count { font-size: 12px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.bar { padding-top: 4px; }
+
 /* ---------- chaînes et réglages ---------- */
 
 .sr {
@@ -374,6 +392,21 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .channels .name { font-weight: 600; font-size: 16px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group { display: flex; align-items: baseline; gap: 10px; margin: 24px 0 10px; font-size: 16px; color: var(--muted); font-weight: 600; letter-spacing: 0.01em; }
+.group:first-of-type { margin-top: 4px; }
+.folder-slot { margin-top: 6px; }
+.folder-chip {
+  padding: 1px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+}
+.folder-chip.set { border-style: solid; color: var(--ink); background: color-mix(in srgb, var(--line) 55%, transparent); }
+.folder-chip:hover:not(:disabled) { border-color: var(--muted); }
+.folder-edit input { width: 100%; padding: 3px 10px; border: 1px solid var(--accent); border-radius: 999px; background: var(--paper); font-size: 13px; }
+.folder-edit input:focus-visible { outline: none; }
 .channels .line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pill { flex: none; padding: 0 8px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; line-height: 1.6; }
 .channels .desc {
@@ -388,9 +421,44 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 }
 .channels li { position: relative; }
 /* « Retirer » se superpose à la carte au survol : il ne réserve pas de place. */
-.channels .remove { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); opacity: 0; padding: 6px 12px; font-size: 14px; background: var(--paper); border: 1px solid var(--line); }
+/* Petite croix ronde rouge, visible au survol de la carte. */
+.channels .remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #c8302b;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.channels .remove:hover:not(:disabled) { border: 0; background: #a82320; transform: scale(1.1); }
 .channels li:hover .remove, .channels li:focus-within .remove, .channels .remove:focus-visible { opacity: 1; }
 @media (hover: none) { .channels .remove { opacity: 1; } }
+.channels li { padding-right: 40px; }
+
+/* Confirmation de retrait : recouvre la carte. */
+.confirm {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1.5px #c8302b;
+  z-index: 1;
+}
+.confirm span { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; line-height: 1.25; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.confirm .danger { background: #c8302b; border-color: #c8302b; color: #fff; font-weight: 600; padding: 6px 14px; }
+.confirm .danger:hover:not(:disabled) { background: #a82320; border-color: #a82320; }
 
 .empty-small { text-align: center; padding: 48px 16px; border: 1.5px dashed var(--line); border-radius: 14px; }
 .empty-small h3 { margin: 14px 0 6px; font-size: 19px; }
@@ -403,7 +471,7 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   padding: 4px;
   gap: 4px;
   border-radius: 12px;

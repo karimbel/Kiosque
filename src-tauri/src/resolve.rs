@@ -151,8 +151,39 @@ pub fn extract_description(html: &str) -> Option<String> {
     })
 }
 
-/// Ce que la page publique d'une chaîne apprend : image de profil et descriptif.
+/// Catégorie YouTube de la chaîne (balise `genre`), traduite en français quand on la connaît.
+pub fn extract_genre(html: &str) -> Option<String> {
+    let caps = Regex::new(r#"<meta itemprop="genre" content="([^"]+)""#)
+        .ok()?
+        .captures(html)?;
+    let genre = decode_entities(caps[1].trim());
+    let french = match genre.as_str() {
+        "Film & Animation" => "Cinéma et animation",
+        "Autos & Vehicles" => "Auto",
+        "Music" => "Musique",
+        "Pets & Animals" => "Animaux",
+        "Sports" => "Sport",
+        "Travel & Events" => "Voyages",
+        "Gaming" => "Jeux vidéo",
+        "People & Blogs" => "Personnes et blogs",
+        "Comedy" => "Humour",
+        "Entertainment" => "Divertissement",
+        "News & Politics" => "Actualités",
+        "Howto & Style" => "Style",
+        "Education" => "Éducation",
+        "Science & Technology" => "Science et technologie",
+        "Nonprofits & Activism" => "Associations",
+        other => other,
+    };
+    if french.is_empty() || french.chars().count() > 40 {
+        return None;
+    }
+    Some(french.to_string())
+}
+
+/// Ce que la page publique d'une chaîne apprend : image de profil, descriptif et catégorie.
 pub struct Profile {
+    pub genre: Option<String>,
     pub avatar: Option<String>,
     /// Vide si la chaîne n'a pas de descriptif (pour ne pas le redemander à chaque fois).
     pub description: String,
@@ -173,6 +204,7 @@ pub async fn fetch_profile(http: &reqwest::Client, channel_id: &str) -> Option<P
     }
     let html = resp.text().await.ok()?;
     Some(Profile {
+        genre: extract_genre(&html),
         avatar: extract_avatar(&html),
         description: extract_description(&html).unwrap_or_default(),
     })
@@ -238,6 +270,15 @@ mod tests {
         let long = format!(r#"<meta property="og:description" content="{}">"#, "mot ".repeat(80));
         let court = extract_description(&long).unwrap();
         assert!(court.ends_with('…') && court.chars().count() <= 161);
+    }
+
+    #[test]
+    fn categorie_de_la_page() {
+        let en = r#"<meta itemprop="genre" content="Science &amp; Technology">"#;
+        assert_eq!(extract_genre(en).as_deref(), Some("Science et technologie"));
+        let fr = r#"<meta itemprop="genre" content="Cuisine">"#;
+        assert_eq!(extract_genre(fr).as_deref(), Some("Cuisine"));
+        assert_eq!(extract_genre("<html></html>"), None);
     }
 
     #[test]

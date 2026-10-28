@@ -26,6 +26,8 @@ pub struct Channel {
     pub title: String,
     pub avatar: Option<String>,
     pub description: Option<String>,
+    /// Dossier choisi par l'utilisateur (proposé à l'import d'après la catégorie YouTube).
+    pub category: Option<String>,
     pub new_count: i64,
 }
 
@@ -38,6 +40,7 @@ pub struct Video {
     pub published: i64,
     pub thumb: Option<String>,
     pub state: String,
+    pub category: Option<String>,
 }
 
 pub struct Db {
@@ -79,7 +82,7 @@ impl Db {
         )
         .map_err(db_err)?;
         // Colonne ajoutée après la première version : on la crée si la base est plus ancienne.
-        for column in ["avatar", "description"] {
+        for column in ["avatar", "description", "category"] {
             let exists = conn
                 .prepare("SELECT 1 FROM pragma_table_info('channels') WHERE name = ?1")
                 .map_err(db_err)?
@@ -116,12 +119,25 @@ impl Db {
     }
 
     /// Enregistre l'avatar (s'il y en a un) et le descriptif ; `description` vide = « consulté, aucun ».
-    pub fn set_profile(&self, id: &str, avatar: Option<&str>, description: &str) -> R<()> {
+    /// `genre` ne sert que de dossier par défaut : il ne remplace jamais un dossier déjà choisi.
+    pub fn set_profile(&self, id: &str, avatar: Option<&str>, description: &str, genre: Option<&str>) -> R<()> {
         self.lock()
             .execute(
-                "UPDATE channels SET avatar = COALESCE(?2, avatar), description = ?3 WHERE id = ?1",
-                params![id, avatar, description],
+                "UPDATE channels SET avatar = COALESCE(?2, avatar), description = ?3,
+                 category = COALESCE(category, ?4) WHERE id = ?1",
+                params![id, avatar, description, genre],
             )
+            .map_err(db_err)?;
+        Ok(())
+    }
+
+    /// Range une chaîne dans un dossier ; un nom vide la retire de son dossier.
+    pub fn set_category(&self, id: &str, category: &str) -> R<()> {
+        let name: String = category.split_whitespace().collect::<Vec<_>>().join(" ");
+        let name: String = name.chars().take(40).collect();
+        let value = if name.is_empty() { None } else { Some(name) };
+        self.lock()
+            .execute("UPDATE channels SET category = ?2 WHERE id = ?1", params![id, value])
             .map_err(db_err)?;
         Ok(())
     }
@@ -137,7 +153,7 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT c.id, c.title, c.avatar, c.description, COALESCE(SUM(v.state = 'new'), 0)
+                "SELECT c.id, c.title, c.avatar, c.description, c.category, COALESCE(SUM(v.state = 'new'), 0)
                  FROM channels c LEFT JOIN videos v ON v.channel_id = c.id
                  GROUP BY c.id
                  ORDER BY c.title COLLATE NOCASE",
@@ -150,7 +166,8 @@ impl Db {
                     title: r.get(1)?,
                     avatar: r.get(2)?,
                     description: r.get(3)?,
-                    new_count: r.get(4)?,
+                    category: r.get(4)?,
+                    new_count: r.get(5)?,
                 })
             })
             .map_err(db_err)?;
@@ -205,7 +222,7 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state
+                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state, c.category
                  FROM videos v JOIN channels c ON c.id = v.channel_id
                  WHERE v.state = ?1
                  ORDER BY v.published DESC
@@ -222,6 +239,7 @@ impl Db {
                     published: r.get(4)?,
                     thumb: r.get(5)?,
                     state: r.get(6)?,
+                    category: r.get(7)?,
                 })
             })
             .map_err(db_err)?;
@@ -234,7 +252,7 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state
+                "SELECT v.id, v.channel_id, c.title, v.title, v.published, v.thumb, v.state, c.category
                  FROM videos v JOIN channels c ON c.id = v.channel_id
                  WHERE v.state != 'ignored'
                  ORDER BY v.published DESC",
@@ -250,6 +268,7 @@ impl Db {
                     published: r.get(4)?,
                     thumb: r.get(5)?,
                     state: r.get(6)?,
+                    category: r.get(7)?,
                 })
             })
             .map_err(db_err)?;
@@ -393,16 +412,35 @@ mod tests {
     }
 
     #[test]
+    fn dossiers_des_chaines() {
+        let db = db_with_channel();
+        // La catégorie YouTube sert de dossier par défaut…
+        db.set_profile("UC1", None, "", Some("Éducation")).unwrap();
+        assert_eq!(db.list_channels().unwrap()[0].category.as_deref(), Some("Éducation"));
+        // …mais n'écrase pas un choix de l'utilisateur.
+        db.set_category("UC1", "  Tech   perso ").unwrap();
+        db.set_profile("UC1", None, "", Some("Éducation")).unwrap();
+        assert_eq!(db.list_channels().unwrap()[0].category.as_deref(), Some("Tech perso"));
+        // Les vidéos portent le dossier de leur chaîne.
+        db.upsert_videos("UC1", &[video("aaaaaaaaaaa", 1)], false, NOW).unwrap();
+        assert_eq!(db.list_videos("new", 10).unwrap()[0].category.as_deref(), Some("Tech perso"));
+        assert_eq!(db.latest_videos(10).unwrap()[0].category.as_deref(), Some("Tech perso"));
+        // Un nom vide retire la chaîne de son dossier.
+        db.set_category("UC1", "   ").unwrap();
+        assert_eq!(db.list_channels().unwrap()[0].category, None);
+    }
+
+    #[test]
     fn avatar_enregistre_et_liste() {
         let db = db_with_channel();
         assert_eq!(db.list_channels().unwrap()[0].avatar, None);
         assert_eq!(db.list_channels().unwrap()[0].description, None);
-        db.set_profile("UC1", Some("https://yt3.googleusercontent.com/abc=s96"), "Un descriptif").unwrap();
+        db.set_profile("UC1", Some("https://yt3.googleusercontent.com/abc=s96"), "Un descriptif", None).unwrap();
         let c = &db.list_channels().unwrap()[0];
         assert_eq!(c.avatar.as_deref(), Some("https://yt3.googleusercontent.com/abc=s96"));
         assert_eq!(c.description.as_deref(), Some("Un descriptif"));
         // Une page sans avatar ne retire pas celui qu'on avait.
-        db.set_profile("UC1", None, "").unwrap();
+        db.set_profile("UC1", None, "", None).unwrap();
         assert!(db.list_channels().unwrap()[0].avatar.is_some());
     }
 
