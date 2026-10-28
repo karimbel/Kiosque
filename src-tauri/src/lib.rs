@@ -353,9 +353,29 @@ fn is_portable(exe: &std::path::Path) -> bool {
     !exe.parent().map(|dir| dir.join("uninstall.exe").exists()).unwrap_or(false)
 }
 
+/// Journal de la mise à jour (`update.log` dans le dossier des données de Kiosque) : une ligne par étape.
+fn log_update(app: &AppHandle, message: &str) {
+    use std::io::Write;
+    let Ok(dir) = app.path().app_data_dir() else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("update.log")) {
+        let _ = writeln!(file, "[{}] {message}", now());
+    }
+}
+
 /// Télécharge la dernière version, la met en place et relance Kiosque.
 #[tauri::command]
 async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    log_update(&app, &format!("début, version installée {}", env!("CARGO_PKG_VERSION")));
+    let result = install_update_inner(&app, &state).await;
+    match &result {
+        Ok(()) => log_update(&app, "terminé, fermeture de Kiosque"),
+        Err(err) => log_update(&app, &format!("ÉCHEC : {err}")),
+    }
+    result
+}
+
+async fn install_update_inner(app: &AppHandle, state: &AppState) -> Result<(), String> {
     let current = parse_version(env!("CARGO_PKG_VERSION")).ok_or_else(|| tr!("Version inconnue.", "Unknown version."))?;
     let release = latest_release(&state.http).await?.ok_or_else(|| tr!("Aucune version trouvée.", "No version found."))?;
     if release.version <= current {
@@ -363,6 +383,7 @@ async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<()
     }
     let exe = std::env::current_exe().map_err(|err| err.to_string())?;
     let portable = is_portable(&exe);
+    log_update(app, &format!("programme : {} ({})", exe.display(), if portable { "portable" } else { "installé" }));
     let url = pick_asset(&release.assets, portable)
         .ok_or_else(|| tr!("Le fichier de cette version est introuvable sur GitHub.", "This version's file was not found on GitHub."))?
         .to_string();
@@ -372,6 +393,7 @@ async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<()
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|err| err.to_string())?;
+    log_update(app, &format!("téléchargement : {url}"));
     let bytes = http
         .get(&url)
         .send()
@@ -385,6 +407,7 @@ async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<()
         return Err(tr!("Le fichier téléchargé n'est pas valide.", "The downloaded file is not valid."));
     }
 
+    log_update(app, &format!("{} octets reçus", bytes.len()));
     if portable {
         // Windows laisse renommer un programme en cours d'exécution : l'ancien est mis de côté,
         // le nouveau prend sa place, puis l'ancien est supprimé au lancement suivant.
@@ -396,9 +419,11 @@ async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<()
             let _ = std::fs::rename(&old, &exe);
             return Err(tr!("Écriture impossible ({err}).", "Write failed ({err})."));
         }
+        log_update(app, "ancien programme mis de côté, nouveau programme écrit");
         std::process::Command::new(&exe)
             .spawn()
             .map_err(|err| tr!("Relance impossible ({err}).", "Restart failed ({err})."))?;
+        log_update(app, "nouveau programme lancé");
     } else {
         let setup = std::env::temp_dir().join("Kiosque-mise-a-jour-setup.exe");
         std::fs::write(&setup, &bytes).map_err(|err| tr!("Écriture impossible ({err}).", "Write failed ({err})."))?;
@@ -406,6 +431,7 @@ async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<()
             .args(["/P", "/R", "/UPDATE"])
             .spawn()
             .map_err(|err| tr!("Installation impossible ({err}).", "Installation failed ({err})."))?;
+        log_update(app, &format!("installeur lancé : {}", setup.display()));
     }
     app.exit(0);
     Ok(())

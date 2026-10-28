@@ -1063,7 +1063,19 @@ document.querySelector('#update').addEventListener('click', async (event) => {
   const button = event.target.closest('[data-update]');
   if (!button) return;
   if (button.dataset.update === 'open') {
-    try { await invoke('open_release'); } catch (err) { setStatus(String(err), 'error'); }
+    // Mise à jour dans Kiosque : téléchargement, installation et relance, sans passer par le navigateur.
+    const box = document.querySelector('#update');
+    const text = document.querySelector('#update-text');
+    const version = box.dataset.version;
+    text.textContent = t('Mise à jour vers Kiosque {v} en cours…', { v: version });
+    box.classList.add('busy');
+    try {
+      await invoke('install_update'); // relance Kiosque : on ne revient normalement pas ici
+    } catch (err) {
+      box.classList.remove('busy');
+      text.textContent = t('Kiosque {v} est disponible.', { v: version });
+      setStatus(t('Mise à jour impossible : {err}', { err }), 'error');
+    }
     return;
   }
   try { localStorage.setItem('update-dismissed', document.querySelector('#update').dataset.version); } catch { /* facultatif */ }

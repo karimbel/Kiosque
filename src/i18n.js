@@ -17,7 +17,7 @@ const EN = {
   'Cette page a besoin de la fenêtre Tauri pour fonctionner.': 'This page needs the Tauri window to work.',
   'Lecteur vidéo': 'Video player',
   // mise à jour
-  'Télécharger': 'Download',
+  'Mettre à jour': 'Update',
   'Fermer': 'Close',
   'Kiosque {v} est disponible.': 'Kiosque {v} is available.',
   'Mise à jour vers Kiosque {v} en cours…': 'Updating to Kiosque {v}…',
