@@ -1,6 +1,7 @@
 mod db;
 mod feed;
 mod i18n;
+mod kids;
 mod providers;
 mod resolve;
 
@@ -9,6 +10,7 @@ use providers::Platform;
 use futures::StreamExt;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
@@ -17,6 +19,24 @@ use tauri_plugin_notification::NotificationExt;
 struct AppState {
     db: Db,
     http: reqwest::Client,
+    /// Essais de code du parent (limités pour ne pas pouvoir tester les 10 000 codes).
+    attempts: Mutex<kids::Attempts>,
+}
+
+/// En mode enfant, ce qui sort du lecteur est refusé : ajout de chaîne, réglages, liens externes, mise à jour.
+fn require_unlocked(state: &AppState) -> Result<(), String> {
+    if kids::active(&state.db).ok().flatten().is_some() {
+        return Err(tr!(
+            "Indisponible en mode enfant : un parent doit d'abord le quitter.",
+            "Not available in kids mode: a parent must leave it first."
+        ));
+    }
+    Ok(())
+}
+
+/// Chaînes visibles en mode enfant (`None` hors mode enfant).
+fn kid_channels(state: &AppState) -> Option<std::collections::HashSet<String>> {
+    kids::active(&state.db).ok().flatten().map(|s| s.channels.into_iter().collect())
 }
 
 fn now() -> i64 {
@@ -36,6 +56,7 @@ struct RefreshReport {
 
 #[tauri::command]
 async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channel, String> {
+    require_unlocked(&state)?;
     // Une autre plateforme que YouTube ? Elle doit avoir été activée dans les réglages.
     if let Some(found) = providers::detect(&input)? {
         let active = providers::enabled_platforms(&state.db.get_setting("platforms")?.unwrap_or_default());
@@ -113,16 +134,22 @@ async fn add_other_channel(state: &AppState, id: String) -> Result<Channel, Stri
 
 #[tauri::command]
 fn list_channels(state: State<'_, AppState>) -> Result<Vec<Channel>, String> {
-    state.db.list_channels()
+    let mut channels = state.db.list_channels()?;
+    if let Some(allowed) = kid_channels(&state) {
+        channels.retain(|c| allowed.contains(&c.id));
+    }
+    Ok(channels)
 }
 
 #[tauri::command]
 fn set_channel_category(state: State<'_, AppState>, id: String, category: String) -> Result<(), String> {
+    require_unlocked(&state)?;
     state.db.set_category(&id, &category)
 }
 
 #[tauri::command]
 fn remove_channel(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    require_unlocked(&state)?;
     state.db.remove_channel(&id)
 }
 
@@ -191,13 +218,26 @@ async fn refresh(state: State<'_, AppState>) -> Result<RefreshReport, String> {
 
 #[tauri::command]
 fn list_videos(state: State<'_, AppState>, status: String) -> Result<Vec<Video>, String> {
-    state.db.list_videos(&status, 300)
+    let Some(allowed) = kid_channels(&state) else {
+        return state.db.list_videos(&status, 300);
+    };
+    // Mode enfant : on filtre avant de limiter, pour ne pas perdre les vidéos de la session.
+    let mut videos = state.db.list_videos(&status, 5000)?;
+    videos.retain(|v| allowed.contains(&v.channel_id));
+    videos.truncate(300);
+    Ok(videos)
 }
 
 /// La dernière vidéo de chaque chaîne, vue ou non : sert quand « À voir » est vide.
 #[tauri::command]
 fn latest_videos(state: State<'_, AppState>) -> Result<Vec<Video>, String> {
-    state.db.latest_videos(24)
+    let Some(allowed) = kid_channels(&state) else {
+        return state.db.latest_videos(24);
+    };
+    let mut videos = state.db.latest_videos(1000)?;
+    videos.retain(|v| allowed.contains(&v.channel_id));
+    videos.truncate(24);
+    Ok(videos)
 }
 
 #[tauri::command]
@@ -207,6 +247,7 @@ fn set_status(state: State<'_, AppState>, id: String, status: String) -> Result<
 
 #[tauri::command]
 fn mark_all_seen(state: State<'_, AppState>) -> Result<usize, String> {
+    require_unlocked(&state)?;
     state.db.mark_all_seen()
 }
 
@@ -215,6 +256,7 @@ fn mark_all_seen(state: State<'_, AppState>) -> Result<usize, String> {
 /// « Ouvrir dans le navigateur » et au réglage « Navigateur ».
 #[tauri::command]
 fn open_video(id: String, state: State<'_, AppState>) -> Result<(), String> {
+    require_unlocked(&state)?;
     if providers::platform_of(&id) == Platform::YouTube && !feed::is_video_id(&id) {
         return Err(tr!("Identifiant de vidéo invalide.", "Invalid video ID."));
     }
@@ -254,6 +296,7 @@ fn get_settings(state: State<'_, AppState>) -> Result<HashMap<String, String>, S
 
 #[tauri::command]
 fn set_setting(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    require_unlocked(&state)?;
     if !SETTINGS.iter().any(|(k, _)| *k == key) {
         return Err(tr!("Réglage inconnu : {key}", "Unknown setting: {key}"));
     }
@@ -406,6 +449,7 @@ fn log_update(app: &AppHandle, message: &str) {
 /// Télécharge la dernière version, la met en place et relance Kiosque.
 #[tauri::command]
 async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    require_unlocked(&state)?;
     log_update(&app, &format!("début, version installée {}", env!("CARGO_PKG_VERSION")));
     let result = install_update_inner(&app, &state).await;
     match &result {
@@ -512,13 +556,15 @@ fn app_version() -> String {
 
 /// Ouvre la page de la dernière release dans le navigateur.
 #[tauri::command]
-fn open_release() -> Result<(), String> {
+fn open_release(state: State<'_, AppState>) -> Result<(), String> {
+    require_unlocked(&state)?;
     open::that(RELEASES_PAGE).map_err(|err| tr!("Impossible d'ouvrir le navigateur : {err}", "Could not open the browser: {err}"))
 }
 
 /// Ouvre le dépôt GitHub du projet dans le navigateur.
 #[tauri::command]
-fn open_repo() -> Result<(), String> {
+fn open_repo(state: State<'_, AppState>) -> Result<(), String> {
+    require_unlocked(&state)?;
     open::that("https://github.com/karimbel/Kiosque").map_err(|err| tr!("Impossible d'ouvrir le navigateur : {err}", "Could not open the browser: {err}"))
 }
 
@@ -526,6 +572,76 @@ fn open_repo() -> Result<(), String> {
 #[tauri::command]
 fn set_language(code: String) {
     i18n::set_language(&code);
+}
+
+// ---------- sessions et mode enfant ----------
+
+fn nanos() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+}
+
+/// Vérifie le code du parent en respectant la limite d'essais.
+fn check_parent_pin(state: &AppState, pin: &str) -> Result<(), String> {
+    let mut attempts = state.attempts.lock().unwrap_or_else(|p| p.into_inner());
+    let wait = attempts.wait();
+    if wait > 0 {
+        return Err(tr!(
+            "Trop d'essais. Réessaie dans {wait} secondes.",
+            "Too many attempts. Try again in {wait} seconds."
+        ));
+    }
+    if kids::pin_matches(&state.db, pin)? {
+        attempts.succeeded();
+        Ok(())
+    } else {
+        attempts.failed();
+        Err(tr!("Code incorrect.", "Wrong code."))
+    }
+}
+
+#[tauri::command]
+fn kid_status(state: State<'_, AppState>) -> Result<kids::KidStatus, String> {
+    kids::status(&state.db)
+}
+
+#[tauri::command]
+fn sessions_list(state: State<'_, AppState>) -> Result<Vec<kids::Session>, String> {
+    require_unlocked(&state)?;
+    kids::sessions(&state.db)
+}
+
+#[tauri::command]
+fn session_save(state: State<'_, AppState>, id: String, name: String, channels: Vec<String>) -> Result<kids::Session, String> {
+    require_unlocked(&state)?;
+    kids::save_session(&state.db, &id, &name, channels, format!("s{:x}", nanos()))
+}
+
+#[tauri::command]
+fn session_delete(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    require_unlocked(&state)?;
+    kids::delete_session(&state.db, &id)
+}
+
+/// Choisit ou change le code du parent. S'il en existe déjà un, l'ancien est demandé.
+#[tauri::command]
+fn kid_set_pin(state: State<'_, AppState>, pin: String, current: Option<String>) -> Result<(), String> {
+    require_unlocked(&state)?;
+    if kids::status(&state.db)?.has_pin {
+        check_parent_pin(&state, &current.unwrap_or_default())?;
+    }
+    kids::set_pin(&state.db, &pin, &format!("{:x}{:x}", nanos(), std::process::id()))
+}
+
+#[tauri::command]
+fn kid_start(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    require_unlocked(&state)?;
+    kids::start(&state.db, &session_id)
+}
+
+#[tauri::command]
+fn kid_stop(state: State<'_, AppState>, pin: String) -> Result<(), String> {
+    check_parent_pin(&state, &pin)?;
+    kids::stop(&state.db)
 }
 
 // ---------- lancement au démarrage de l'ordinateur ----------
@@ -536,7 +652,8 @@ fn get_autostart(app: AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+fn set_autostart(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> Result<bool, String> {
+    require_unlocked(&state)?;
     let launcher = app.autolaunch();
     if enabled {
         launcher.enable().map_err(|err| err.to_string())?;
@@ -559,9 +676,11 @@ pub fn run() {
             let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
             std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
             let db = Db::open(&dir.join("kiosque.sqlite3"))?;
+            kids::reset_if_requested(&db, &dir);
             app.manage(AppState {
                 db,
                 http: feed::client(),
+                attempts: Mutex::new(kids::Attempts::new()),
             });
             Ok(())
         })
@@ -588,6 +707,13 @@ pub fn run() {
             open_repo,
             get_autostart,
             set_autostart,
+            kid_status,
+            sessions_list,
+            session_save,
+            session_delete,
+            kid_set_pin,
+            kid_start,
+            kid_stop,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Kiosque");

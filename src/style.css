@@ -747,3 +747,31 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 .channels .tags:has(.folder-edit) .pf { flex: none; }
 .channels .tags:has(.folder-edit) .folder-slot { flex: 1; min-width: 0; }
 .channels .tags .folder-edit { width: 100%; margin: 0; }
+
+/* ---------- sessions et mode enfant ---------- */
+.modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(0, 0, 0, .55); }
+.modal[hidden] { display: none; }
+.modal-box { width: min(92vw, 340px); padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); color: var(--ink); }
+.modal-box h2 { margin: 0; font-size: 18px; }
+.modal-box .text { margin-top: 12px; text-align: center; letter-spacing: .4em; font-size: 20px; }
+.pin-error { margin: 8px 0 0; color: var(--accent); font-size: 14px; }
+.row-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.kid-badge { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; }
+.kid-badge[hidden] { display: none; }
+.kid-badge .kid-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sessions { list-style: none; margin: 12px 0 0; padding: 0; }
+.sessions li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.sessions .sname { display: flex; flex-direction: column; min-width: 0; font-weight: 500; }
+.sessions .note { color: var(--muted); font-size: 13px; font-weight: 400; }
+.sessions .sact { display: flex; gap: 4px; flex-shrink: 0; }
+.picklist { max-height: 240px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 4px 8px; }
+.pick { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; }
+.pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field.pin .text { margin-top: 8px; max-width: 220px; }
+body.kid [data-act="open-settings"], body.kid #settings-open { display: none; }
+body.kid .tabs [data-tab="channels"] { display: none; }
+body.kid #status:not([data-kind="error"]) { display: none; }
+.kid-badge { max-width: 170px; }
+.sessions li { flex-wrap: wrap; }
+.sessions .sname { flex: 1 1 9em; }
+.field.pin { margin-top: 22px; }

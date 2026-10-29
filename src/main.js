@@ -40,6 +40,10 @@ const app = {
   sub: (() => { try { return localStorage.getItem('sub') || 'platforms'; } catch { return 'mine'; } })(),
   version: '',
   busy: false,
+  kid: { active: false, session_name: '', has_pin: false }, // mode enfant
+  sessions: [],
+  sessionEdit: null, // session en cours de modification : { id, name, channels:Set }
+  pinForm: false,
 };
 
 // ---------- utilitaires ----------
@@ -276,7 +280,10 @@ document.addEventListener('keydown', (event) => {
 
 // ---------- données ----------
 
-const loadChannels = async () => { app.channels = await invoke('list_channels'); };
+const loadChannels = async () => {
+  app.channels = await invoke('list_channels');
+  if (!app.kid.active) app.sessions = await invoke('sessions_list').catch(() => []);
+};
 const loadVideos = async () => {
   app.videos = await invoke('list_videos', { status: app.tab });
   // « À voir » vide : on montre à la place la dernière vidéo de chaque chaîne.
@@ -300,6 +307,10 @@ function renderTabs() {
 
 function emptyState() {
   const n = app.channels.length;
+  if (app.kid.active && n === 0) {
+    return `<div class="empty"><img src="logo.svg" alt=""><h2>${t('Aucune chaîne dans cette session')}</h2>
+      <p>${t('Un parent peut en ajouter dans Chaînes → Sessions.')}</p></div>`;
+  }
   if (app.tab === 'new') {
     if (n === 0) {
       return `<div class="empty"><img src="logo.svg" alt=""><h2>${t('Aucune chaîne suivie')}</h2>
@@ -465,6 +476,125 @@ const PLAYER_HINTS = {
   browser: 'La vidéo s’ouvre dans ton navigateur habituel.',
 }; // traduits à l'affichage
 
+// ---------- sessions et mode enfant ----------
+
+function sessionsPanel() {
+  const ed = app.sessionEdit;
+  if (ed) {
+    const rows = app.channels.map((c) => `<label class="pick"><input type="checkbox" data-pick="${esc(c.id)}" ${ed.channels.has(c.id) ? 'checked' : ''}>
+        <span class="pick-name">${esc(c.title)}</span>${platformLabel(c.platform) ? `<span class="pf">${esc(platformLabel(c.platform))}</span>` : ''}</label>`).join('');
+    return `<div class="field"><label class="switch-label" for="session-name">${t('Nom de la session')}</label>
+        <input id="session-name" class="text" type="text" maxlength="40" autocomplete="off" value="${esc(ed.name)}" placeholder="${esc(t('Ex. : Les enfants'))}"></div>
+      <div class="field"><span class="switch-label">${t('Chaînes de la session')}</span>
+        <div class="picklist">${rows || `<p class="hint">${t('Ajoute d’abord des chaînes dans « Mes chaînes ».')}</p>`}</div></div>
+      <div class="row-actions"><button type="button" class="primary" data-act="session-save">${t('Enregistrer')}</button>
+        <button type="button" class="quiet" data-act="session-cancel">${t('Annuler')}</button></div>`;
+  }
+  const list = app.sessions.length
+    ? `<ul class="sessions">${app.sessions.map((s) => `<li data-session="${esc(s.id)}">
+        <span class="sname">${esc(s.name)}<span class="note">${tn(s.channels.length, '{n} chaîne', '{n} chaînes')}</span></span>
+        <span class="sact"><button type="button" class="primary small" data-act="session-launch">${t('Lancer')}</button>
+          <button type="button" class="quiet" data-act="session-edit">${t('Modifier')}</button>
+          <button type="button" class="quiet" data-act="session-delete" aria-label="${esc(t('Supprimer {name}', { name: s.name }))}" title="${esc(t('Supprimer cette session'))}">×</button></span></li>`).join('')}</ul>`
+    : `<p class="hint">${t('Aucune session pour l’instant.')}</p>`;
+  const pin = app.kid.has_pin
+    ? `<p class="hint">${t('Un code est défini.')}</p>`
+    : `<p class="hint">${t('Aucun code : choisis-en un avant de lancer le mode enfant.')}</p>`;
+  const pinForm = app.pinForm
+    ? `${app.kid.has_pin ? `<input id="pin-current" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Code actuel'))}" aria-label="${esc(t('Code actuel'))}">` : ''}
+       <input id="pin-new" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Nouveau code (4 chiffres)'))}" aria-label="${esc(t('Nouveau code (4 chiffres)'))}">
+       <div class="row-actions"><button type="button" class="primary" data-act="pin-save">${t('Enregistrer')}</button>
+         <button type="button" class="quiet" data-act="pin-cancel">${t('Annuler')}</button></div>`
+    : `<button type="button" data-act="pin-open">${app.kid.has_pin ? t('Changer le code') : t('Choisir un code')}</button>`;
+  return `<p class="hint">${t('Une session est une liste de chaînes. Le mode enfant la verrouille : seules ces chaînes sont visibles, sans ajout, sans réglages ni liens externes.')}</p>
+    ${list}
+    <div class="row-actions"><button type="button" data-act="session-new">${t('Nouvelle session')}</button></div>
+    <div class="field pin"><span class="switch-label">${t('Code du parent')}</span>${pin}${pinForm}</div>`;
+}
+
+/** Recharge tout après l'entrée ou la sortie du mode enfant. */
+async function reloadAfterKidChange() {
+  closePlayer();
+  app.kid = await invoke('kid_status');
+  app.sessionEdit = null;
+  app.pinForm = false;
+  setPlatform('');
+  setFolder('');
+  applyKid();
+  await loadChannels();
+  if (app.tab !== 'channels') await loadVideos();
+  render();
+}
+
+function applyKid() {
+  const on = !!app.kid.active;
+  document.body.classList.toggle('kid', on);
+  const button = document.querySelector('#kid-exit');
+  button.hidden = !on;
+  if (on) {
+    button.querySelector('.kid-name').textContent = t('Mode enfant');
+    button.title = t('Session : {name} — quitter le mode enfant (code du parent)', { name: app.kid.session_name });
+    document.querySelector('#update').hidden = true;
+    if (app.tab === 'channels') app.tab = 'new';
+  }
+}
+
+/** Demande le code du parent dans une fenêtre ; `action(code)` doit lever une erreur si le code est refusé. */
+function askPin(title, hint, action) {
+  const modal = document.querySelector('#pin-modal');
+  const input = document.querySelector('#pin-input');
+  const error = document.querySelector('#pin-error');
+  document.querySelector('#pin-title').textContent = title;
+  document.querySelector('#pin-hint').textContent = hint;
+  error.hidden = true;
+  input.value = '';
+  modal.hidden = false;
+  input.focus();
+  return new Promise((resolve) => {
+    const form = document.querySelector('#pin-form');
+    const finish = (result) => {
+      modal.hidden = true;
+      form.removeEventListener('submit', onSubmit);
+      document.removeEventListener('keydown', onKey, true);
+      document.querySelector('#pin-cancel').removeEventListener('click', onCancel);
+      resolve(result);
+    };
+    const onSubmit = async (event) => {
+      event.preventDefault();
+      try {
+        await action(input.value);
+        finish(true);
+      } catch (err) {
+        error.textContent = String(err);
+        error.hidden = false;
+        input.value = '';
+        input.focus();
+      }
+    };
+    const onCancel = () => finish(false);
+    const onKey = (event) => { if (event.key === 'Escape') { event.stopPropagation(); finish(false); } };
+    form.addEventListener('submit', onSubmit);
+    document.querySelector('#pin-cancel').addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey, true);
+  });
+}
+
+document.querySelector('#kid-exit').addEventListener('click', async () => {
+  const done = await askPin(t('Code du parent'), t('Saisis le code pour quitter le mode enfant.'), (pin) => invoke('kid_stop', { pin }));
+  if (!done) return;
+  await reloadAfterKidChange();
+  setStatus(t('Mode enfant désactivé'));
+});
+
+view.addEventListener('input', (event) => {
+  if (event.target.id === 'session-name' && app.sessionEdit) app.sessionEdit.name = event.target.value;
+});
+view.addEventListener('change', (event) => {
+  const id = event.target.dataset?.pick;
+  if (!id || !app.sessionEdit) return;
+  if (event.target.checked) app.sessionEdit.channels.add(id); else app.sessionEdit.channels.delete(id);
+});
+
 function renderChannels() {
   const s = app.settings;
   const player = s.player === 'browser' ? 'browser' : 'inapp';
@@ -497,7 +627,7 @@ function renderChannels() {
     `<label class="switch-row" for="${id}"><span class="switch-text"><span class="switch-label">${label}</span><span class="switch-help">${help}</span></span>
       <input type="checkbox" id="${id}" class="switch" ${attrs} ${on ? 'checked' : ''}></label>`;
 
-  const SUBS = [['platforms', t('Plateformes')], ['playback', t('Lecture')], ['system', t('Système')]];
+  const SUBS = [['platforms', t('Plateformes')], ['playback', t('Lecture')], ['sessions', t('Sessions')], ['system', t('Système')]];
   if (!SUBS.some(([k]) => k === app.sub)) app.sub = 'playback';
 
   const panels = {
@@ -514,6 +644,7 @@ function renderChannels() {
       <p class="hint">${t(PLAYER_HINTS[player])}</p>
       ${toggle('thumbs', t('Miniatures'), t('Une image pour chaque vidéo.'), 'data-local="thumbs"', showThumbs())}
       ${toggle('shorts', t('Masquer les Shorts'), t('Pris en compte à la prochaine actualisation.'), 'data-setting="exclude_shorts"', s.exclude_shorts !== '0')}`,
+    sessions: sessionsPanel(),
     system: `
       <div class="field"><span class="switch-label">${t('Langue')}</span>
         <div class="segmented three" role="radiogroup" aria-label="${t('Langue')}">
@@ -585,6 +716,7 @@ function render() {
 }
 
 async function switchTab(tab) {
+  if (app.kid.active && tab === 'channels') return; // verrouillé : pas de gestion des chaînes
   minimizePlayer();
   app.tab = tab;
   try {
@@ -665,6 +797,57 @@ view.addEventListener('click', async (event) => {
       case 'open-repo':
         event.preventDefault();
         return await invoke('open_repo');
+      case 'session-new':
+        app.sessionEdit = { id: '', name: '', channels: new Set() };
+        return renderChannels();
+      case 'session-edit': {
+        const session = app.sessions.find((s) => s.id === button.closest('[data-session]').dataset.session);
+        if (!session) return;
+        app.sessionEdit = { id: session.id, name: session.name, channels: new Set(session.channels) };
+        return renderChannels();
+      }
+      case 'session-cancel':
+        app.sessionEdit = null;
+        return renderChannels();
+      case 'session-save': {
+        const ed = app.sessionEdit;
+        await invoke('session_save', { id: ed.id, name: ed.name, channels: [...ed.channels] });
+        app.sessions = await invoke('sessions_list');
+        app.sessionEdit = null;
+        renderChannels();
+        return setStatus(t('Session enregistrée'));
+      }
+      case 'session-delete': {
+        if (!confirmClick(button, t('Confirmer ?'))) return;
+        await invoke('session_delete', { id: button.closest('[data-session]').dataset.session });
+        app.sessions = await invoke('sessions_list');
+        renderChannels();
+        return setStatus(t('Session supprimée'));
+      }
+      case 'session-launch': {
+        if (!app.kid.has_pin) {
+          app.pinForm = true;
+          renderChannels();
+          return setStatus(t('Choisis d’abord un code du parent.'), 'error');
+        }
+        await invoke('kid_start', { sessionId: button.closest('[data-session]').dataset.session });
+        await reloadAfterKidChange();
+        return setStatus(t('Mode enfant activé'));
+      }
+      case 'pin-open':
+        app.pinForm = true;
+        return renderChannels();
+      case 'pin-cancel':
+        app.pinForm = false;
+        return renderChannels();
+      case 'pin-save': {
+        const current = document.querySelector('#pin-current')?.value ?? null;
+        await invoke('kid_set_pin', { pin: document.querySelector('#pin-new').value, current });
+        app.kid = await invoke('kid_status');
+        app.pinForm = false;
+        renderChannels();
+        return setStatus(t('Code enregistré'));
+      }
       case 'reset-filters':
         minimizePlayer();
         setFolder('');
@@ -692,8 +875,8 @@ view.addEventListener('click', async (event) => {
 
         // Réglage « Navigateur » : la vidéo s'ouvre hors de Kiosque. Dailymotion : si l'auteur interdit
         // l'intégration (le lecteur afficherait « Forbidden »), la vidéo s'ouvre aussi dans le navigateur.
-        let external = app.settings.player === 'browser';
-        if (!external && video.platform === 'dailymotion' && !(await invoke('can_embed', { id }))) {
+        let external = app.settings.player === 'browser' && !app.kid.active;
+        if (!external && !app.kid.active && video.platform === 'dailymotion' && !(await invoke('can_embed', { id }))) {
           external = true;
           setStatus(t('L’auteur de cette vidéo Dailymotion interdit sa lecture hors de Dailymotion : ouverture dans le navigateur.'));
         }
@@ -857,6 +1040,7 @@ refreshBtn.addEventListener('click', refresh);
 function applyStatic() {
   for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.dataset.t);
   for (const el of document.querySelectorAll('[data-t-aria]')) el.setAttribute('aria-label', t(el.dataset.tAria));
+  for (const el of document.querySelectorAll('[data-t-title]')) el.title = t(el.dataset.tTitle);
   setNav(document.documentElement.dataset.nav === 'collapsed', false);
   const box = document.querySelector('#update');
   if (box && !box.hidden && !box.classList.contains('busy') && box.dataset.version) {
@@ -919,6 +1103,7 @@ async function runInstall(version) {
 }
 
 async function checkUpdate() {
+  if (app.kid.active) return;
   try {
     const info = await invoke('check_update');
     if (!info) return;
@@ -961,6 +1146,8 @@ document.querySelector('#update').addEventListener('click', async (event) => {
     applyStatic();
     app.version = await invoke('app_version').catch(() => '');
     app.autostart = await invoke('get_autostart').catch(() => false);
+    app.kid = await invoke('kid_status').catch(() => app.kid);
+    applyKid();
     await loadChannels();
     await loadVideos();
     render();

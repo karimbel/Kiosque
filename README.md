@@ -82,6 +82,26 @@ Sous Windows, `construire.bat` fabrique l'installeur avec ton Rust local (`src-t
 
 Les titres entièrement en majuscules sont remis en minuscules (le titre d'origine s'affiche au survol) et les miniatures sont masquées par défaut (case à cocher dans Chaînes).
 
+## Sessions et mode enfant
+
+Dans **Chaînes → Sessions**, tu crées des sessions : des listes de chaînes (« Les enfants », « Info »…). Le **mode enfant** verrouille Kiosque sur une session :
+
+- seules les chaînes de la session sont visibles (vidéos, compteurs, filtres) ;
+- plus d'onglet Chaînes, de réglages, d'ajout de chaîne, de liens externes ni de mise à jour ;
+- on en sort avec le **code du parent** (4 chiffres, à définir avant le premier lancement), via le bouton cadenas en haut à droite.
+
+Le verrou est appliqué aussi côté Rust (l'interface seule ne suffit pas) ; le code est stocké salé et haché, et les essais ratés sont espacés dans le temps. Le mode reste actif après redémarrage.
+
+![Onglet Sessions : liste des sessions et code du parent](docs/apercu-sessions.png)
+
+![Kiosque en mode enfant : seules les chaînes de la session](docs/apercu-mode-enfant.png)
+
+![Fenêtre du code du parent pour quitter le mode enfant](docs/apercu-code-parent.png)
+
+**Code oublié** : crée un fichier `reinitialiser-mode-enfant.txt` dans le dossier de données (voir plus bas) puis relance Kiosque : le mode enfant est désactivé et le code effacé.
+
+**Limites honnêtes** : c'est un garde-fou pour la maison, pas un contrôle parental de sécurité. Un enfant à l'aise avec l'ordinateur peut contourner (fermer l'appli, supprimer les données, ouvrir YouTube dans un navigateur). Les vidéos « à voir / vues » sont communes à tout le monde : ce qu'un enfant regarde apparaît dans l'historique. Une fois la vidéo lancée, YouTube garde ses propres liens (logo, suggestions de fin) dans le lecteur.
+
 ## Où sont les données
 
 Dans un fichier SQLite local, `kiosque.sqlite3`, dans le dossier de données de l'application :
