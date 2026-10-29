@@ -231,15 +231,101 @@ pub fn stop(db: &Db) -> Result<(), String> {
     db.set_setting(ACTIVE_KEY, "")
 }
 
-/// Secours si le code est oublié : un fichier `reinitialiser-mode-enfant.txt` posé dans le dossier des données
-/// de Kiosque efface le code et déverrouille l'application au prochain lancement.
-pub fn reset_if_requested(db: &Db, dir: &std::path::Path) {
-    let marker = dir.join("reinitialiser-mode-enfant.txt");
-    if marker.exists() {
-        let _ = db.set_setting(ACTIVE_KEY, "");
-        let _ = db.set_setting(PIN_KEY, "");
-        let _ = std::fs::remove_file(marker);
+// ---------- export / import ----------
+
+const FORMAT: u32 = 1;
+const MAX_FILE: usize = 1_000_000;
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FileChannel {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct FileSession {
+    pub name: String,
+    pub channels: Vec<FileChannel>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SessionsFile {
+    kiosque_sessions: u32,
+    sessions: Vec<FileSession>,
+}
+
+/// Le fichier d'échange : noms de sessions et chaînes (identifiant + titre). Jamais le code du parent.
+pub fn export_json(sessions: &[Session], title_of: &dyn Fn(&str) -> String) -> Result<String, String> {
+    let file = SessionsFile {
+        kiosque_sessions: FORMAT,
+        sessions: sessions
+            .iter()
+            .map(|s| FileSession {
+                name: s.name.clone(),
+                channels: s.channels.iter().map(|id| FileChannel { id: id.clone(), title: title_of(id) }).collect(),
+            })
+            .collect(),
+    };
+    serde_json::to_string_pretty(&file).map_err(|err| err.to_string())
+}
+
+/// Lit et vérifie un fichier reçu : taille, version, noms et identifiants raisonnables.
+pub fn parse_import(json: &str) -> Result<Vec<FileSession>, String> {
+    let invalid = || crate::tr!("Ce fichier n'est pas une sauvegarde de sessions Kiosque.", "This file is not a Kiosque sessions backup.");
+    if json.len() > MAX_FILE {
+        return Err(invalid());
     }
+    let file: SessionsFile = serde_json::from_str(json.trim_start_matches('\u{feff}')).map_err(|_| invalid())?;
+    if file.kiosque_sessions != FORMAT || file.sessions.len() > 50 {
+        return Err(invalid());
+    }
+    let mut out = Vec::new();
+    for session in file.sessions {
+        let name: String = session.name.trim().chars().take(40).collect();
+        if name.is_empty() || session.channels.len() > 500 {
+            continue;
+        }
+        let channels: Vec<FileChannel> = session
+            .channels
+            .into_iter()
+            .filter(|c| !c.id.is_empty() && c.id.chars().count() <= 300 && !c.id.chars().any(char::is_control))
+            .map(|c| FileChannel { id: c.id, title: c.title.chars().filter(|ch| !ch.is_control()).take(100).collect() })
+            .collect();
+        out.push(FileSession { name, channels });
+    }
+    if out.is_empty() {
+        return Err(crate::tr!("Ce fichier ne contient aucune session.", "This file contains no sessions."));
+    }
+    Ok(out)
+}
+
+/// Un nom libre : « Nom », puis « Nom (2) », « Nom (3) »… (40 caractères au plus).
+fn free_name(taken: &[String], wanted: &str) -> String {
+    if !taken.iter().any(|n| n == wanted) {
+        return wanted.to_string();
+    }
+    for n in 2.. {
+        let suffix = format!(" ({n})");
+        let keep = 40usize.saturating_sub(suffix.chars().count());
+        let candidate = format!("{}{suffix}", wanted.chars().take(keep).collect::<String>());
+        if !taken.iter().any(|t| *t == candidate) {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+/// Ajoute les sessions du fichier sans jamais en écraser une : un nom déjà pris reçoit un numéro.
+/// Les chaînes absentes de cet ordinateur restent dans la session, elles n'apparaîtront qu'une fois suivies.
+pub fn import_sessions(db: &Db, parsed: &[FileSession], new_id: &dyn Fn(usize) -> String) -> Result<usize, String> {
+    let mut names: Vec<String> = sessions(db)?.into_iter().map(|s| s.name).collect();
+    for (i, session) in parsed.iter().enumerate() {
+        let name = free_name(&names, &session.name);
+        save_session(db, "", &name, session.channels.iter().map(|c| c.id.clone()).collect(), new_id(i))?;
+        names.push(name);
+    }
+    Ok(parsed.len())
 }
 
 #[cfg(test)]
@@ -312,5 +398,55 @@ mod tests {
         start(&db, "s1").unwrap();
         delete_session(&db, "s1").unwrap();
         assert!(!status(&db).unwrap().active);
+    }
+
+    #[test]
+    fn export_import_aller_retour() {
+        let list = vec![Session { id: "s1".into(), name: "Les enfants".into(), channels: vec!["UC1".into(), "pt:a".into()] }];
+        let json = export_json(&list, &|id| format!("Titre {id}")).unwrap();
+        assert!(!json.contains("pin") && !json.contains("kid_"));
+        let back = parse_import(&json).unwrap();
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].name, "Les enfants");
+        assert_eq!(back[0].channels[1], FileChannel { id: "pt:a".into(), title: "Titre pt:a".into() });
+    }
+
+    #[test]
+    fn import_refuse_les_fichiers_invalides() {
+        assert!(parse_import("pas du json").is_err());
+        assert!(parse_import("{\"kiosque_sessions\":2,\"sessions\":[]}").is_err());
+        assert!(parse_import("{\"kiosque_sessions\":1,\"sessions\":[]}").is_err());
+        assert!(parse_import("{\"kiosque_sessions\":1,\"sessions\":[{\"name\":\"  \",\"channels\":[]}]}").is_err());
+        assert!(parse_import(&"x".repeat(MAX_FILE + 1)).is_err());
+        // Identifiants vides ou avec caractères de contrôle ignorés, nom tronqué à 40.
+        let long = "n".repeat(60);
+        let json = format!("{{\"kiosque_sessions\":1,\"sessions\":[{{\"name\":\"{long}\",\"channels\":[{{\"id\":\"\"}},{{\"id\":\"a\\nb\"}},{{\"id\":\"UC1\"}}]}}]}}");
+        let parsed = parse_import(&json).unwrap();
+        assert_eq!(parsed[0].name.chars().count(), 40);
+        assert_eq!(parsed[0].channels.len(), 1);
+    }
+
+    #[test]
+    fn noms_libres() {
+        let taken = vec!["Les enfants".to_string(), "Les enfants (2)".to_string()];
+        assert_eq!(free_name(&taken, "Info"), "Info");
+        assert_eq!(free_name(&taken, "Les enfants"), "Les enfants (3)");
+        let long = "n".repeat(40);
+        let renamed = free_name(&[long.clone()], &long);
+        assert_eq!(renamed.chars().count(), 40);
+        assert!(renamed.ends_with(" (2)"));
+    }
+
+    #[test]
+    fn import_en_base_sans_ecraser() {
+        let db = Db::open_in_memory().unwrap();
+        save_session(&db, "", "Les enfants", vec!["UC9".into()], "s1".into()).unwrap();
+        let parsed = vec![FileSession { name: "Les enfants".into(), channels: vec![FileChannel { id: "UC1".into(), title: "A".into() }] }];
+        import_sessions(&db, &parsed, &|i| format!("n{i}")).unwrap();
+        import_sessions(&db, &parsed, &|i| format!("m{i}")).unwrap();
+        let list = sessions(&db).unwrap();
+        let names: Vec<_> = list.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["Les enfants", "Les enfants (2)", "Les enfants (3)"]);
+        assert_eq!(list[0].channels, vec!["UC9"]); // l'existante est intacte
     }
 }

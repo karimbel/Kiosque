@@ -80,6 +80,11 @@ async fn add_channel(state: State<'_, AppState>, input: String) -> Result<Channe
         return add_other_channel(&state, id).await;
     }
     let id = resolve::resolve_channel_id(&state.http, &input).await?;
+    add_youtube_channel(&state, id).await
+}
+
+/// Ajoute une chaîne YouTube dont on connaît déjà l'identifiant `UC…`.
+async fn add_youtube_channel(state: &AppState, id: String) -> Result<Channel, String> {
     let meta = feed::fetch_channel_feed(&state.http, &id)
         .await
         .map_err(|err| tr!("Le flux de cette chaîne est inaccessible ({err}). Vérifie l'adresse.", "This channel's feed is unreachable ({err}). Check the address."))?;
@@ -644,6 +649,106 @@ fn kid_stop(state: State<'_, AppState>, pin: String) -> Result<(), String> {
     kids::stop(&state.db)
 }
 
+// ---------- export / import des sessions ----------
+
+#[derive(Serialize)]
+struct MissingChannel {
+    id: String,
+    title: String,
+    platform: String,
+}
+
+#[derive(Serialize)]
+struct ImportReport {
+    imported: usize,
+    /// Chaînes des sessions importées que cet ordinateur ne suit pas encore.
+    missing: Vec<MissingChannel>,
+}
+
+#[derive(Serialize)]
+struct FollowReport {
+    followed: usize,
+    failed: Vec<String>,
+}
+
+/// Écrit les sessions dans le dossier Téléchargements et renvoie le chemin du fichier.
+#[tauri::command]
+fn sessions_export(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    require_unlocked(&state)?;
+    let sessions = kids::sessions(&state.db)?;
+    if sessions.is_empty() {
+        return Err(tr!("Aucune session à exporter.", "No sessions to export."));
+    }
+    let titles: HashMap<String, String> = state.db.list_channels()?.into_iter().map(|c| (c.id, c.title)).collect();
+    let json = kids::export_json(&sessions, &|id| titles.get(id).cloned().unwrap_or_default())?;
+    let dir = app.path().download_dir().map_err(|err| err.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let mut path = dir.join("kiosque-sessions.json");
+    for n in 2..100 {
+        if !path.exists() {
+            break;
+        }
+        path = dir.join(format!("kiosque-sessions ({n}).json"));
+    }
+    std::fs::write(&path, json).map_err(|err| err.to_string())?;
+    Ok(path.display().to_string())
+}
+
+/// Importe un fichier de sessions (jamais d'écrasement) et liste les chaînes à suivre.
+#[tauri::command]
+fn sessions_import(state: State<'_, AppState>, json: String) -> Result<ImportReport, String> {
+    require_unlocked(&state)?;
+    let parsed = kids::parse_import(&json)?;
+    let base = nanos();
+    let imported = kids::import_sessions(&state.db, &parsed, &|i| format!("s{:x}", base + i as u128))?;
+    let known: std::collections::HashSet<String> = state.db.list_channels()?.into_iter().map(|c| c.id).collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut missing = Vec::new();
+    for channel in parsed.iter().flat_map(|s| s.channels.iter()) {
+        if !known.contains(&channel.id) && seen.insert(channel.id.clone()) {
+            missing.push(MissingChannel {
+                id: channel.id.clone(),
+                title: if channel.title.is_empty() { channel.id.clone() } else { channel.title.clone() },
+                platform: providers::platform_of(&channel.id).key().to_string(),
+            });
+        }
+    }
+    Ok(ImportReport { imported, missing })
+}
+
+/// Suit les chaînes manquantes d'après leur identifiant. Une plateforme désactivée n'est pas activée d'office.
+#[tauri::command]
+async fn follow_channels(state: State<'_, AppState>, ids: Vec<String>) -> Result<FollowReport, String> {
+    require_unlocked(&state)?;
+    let active = providers::enabled_platforms(&state.db.get_setting("platforms")?.unwrap_or_default());
+    let mut followed = 0;
+    let mut failed = Vec::new();
+    for id in ids.into_iter().take(200) {
+        let platform = providers::platform_of(&id);
+        let result = if platform == Platform::YouTube {
+            let valid = id.len() == 24 && id.starts_with("UC") && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+            if valid {
+                add_youtube_channel(&state, id.clone()).await.map(|_| ())
+            } else {
+                Err(tr!("identifiant de chaîne invalide", "invalid channel id"))
+            }
+        } else if providers::unavailable(platform) {
+            let name = platform.label();
+            Err(tr!("{name} n'est pas encore disponible dans Kiosque.", "{name} is not available in Kiosque yet."))
+        } else if !active.contains(&platform) {
+            let name = platform.label();
+            Err(tr!("active {name} dans Chaînes → Plateformes", "turn {name} on in Channels → Platforms"))
+        } else {
+            add_other_channel(&state, id.clone()).await.map(|_| ())
+        };
+        match result {
+            Ok(()) => followed += 1,
+            Err(err) => failed.push(format!("{id} : {err}")),
+        }
+    }
+    Ok(FollowReport { followed, failed })
+}
+
 // ---------- lancement au démarrage de l'ordinateur ----------
 
 #[tauri::command]
@@ -676,7 +781,6 @@ pub fn run() {
             let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
             std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
             let db = Db::open(&dir.join("kiosque.sqlite3"))?;
-            kids::reset_if_requested(&db, &dir);
             app.manage(AppState {
                 db,
                 http: feed::client(),
@@ -714,6 +818,9 @@ pub fn run() {
             kid_set_pin,
             kid_start,
             kid_stop,
+            sessions_export,
+            sessions_import,
+            follow_channels,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Kiosque");

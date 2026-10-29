@@ -1,7 +1,7 @@
 'use strict';
 
 const view = document.querySelector('#view');
-const statusEl = document.querySelector('#status');
+const toastBox = document.querySelector('#toasts');
 const refreshBtn = document.querySelector('#refresh');
 const tabButtons = [...document.querySelectorAll('.tabs [data-tab]')];
 
@@ -44,6 +44,7 @@ const app = {
   sessions: [],
   sessionEdit: null, // session en cours de modification : { id, name, channels:Set }
   pinForm: false,
+  missing: [], // chaînes des sessions importées pas encore suivies : { id, title, platform }
 };
 
 // ---------- utilitaires ----------
@@ -55,9 +56,51 @@ const plural = (n, one, many) => t(lang === 'en' ? (n !== 1 ? many : one) : (n >
 // Miniatures affichées par défaut ; se désactivent dans Chaînes.
 const showThumbs = () => { try { return localStorage.getItem('thumbs') !== '0'; } catch { return true; } };
 
+/**
+ * Notification éphémère en bas à gauche. `kind` : '' (info), 'error' (reste plus longtemps)
+ * ou 'busy' (opération en cours : reste affichée jusqu'à la notification suivante).
+ * Un message vide ne fait rien.
+ */
 function setStatus(message, kind = '') {
-  statusEl.textContent = message;
-  statusEl.dataset.kind = kind;
+  if (!message) return;
+  for (const old of toastBox.querySelectorAll('.toast[data-kind="busy"]')) dismissToast(old);
+  const same = [...toastBox.children].find((el) => el.dataset.text === message && el.dataset.kind === kind);
+  if (same) same.remove();
+  while (toastBox.children.length >= 4) toastBox.firstElementChild.remove();
+
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.dataset.kind = kind;
+  el.dataset.text = message;
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  const icon = document.createElement('span');
+  icon.className = 'toast-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = message;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.setAttribute('aria-label', t('Fermer'));
+  close.textContent = '×';
+  close.addEventListener('click', () => dismissToast(el));
+  el.append(icon, text, close);
+  toastBox.append(el);
+
+  if (kind === 'busy') return;
+  let left = kind === 'error' ? 9000 : 4500;
+  let started = Date.now();
+  let timer = setTimeout(() => dismissToast(el), left);
+  // Le survol met la notification en pause pour avoir le temps de la lire.
+  el.addEventListener('mouseenter', () => { clearTimeout(timer); left -= Date.now() - started; });
+  el.addEventListener('mouseleave', () => { started = Date.now(); timer = setTimeout(() => dismissToast(el), Math.max(left, 1500)); });
+}
+
+function dismissToast(el) {
+  if (!el.isConnected || el.classList.contains('out')) return;
+  el.classList.add('out');
+  setTimeout(() => el.remove(), 220);
 }
 
 /** Remet en minuscules les titres criés en majuscules et réduit « !!! » à « ! ». Le titre d'origine reste en infobulle. */
@@ -512,6 +555,25 @@ function sessionsPanel() {
     <div class="field pin"><span class="switch-label">${t('Code du parent')}</span>${pin}${pinForm}</div>`;
 }
 
+/** Sauvegarde et transfert des sessions (réglages Système). */
+function sessionsBackup() {
+  return `<div class="field backup"><span class="switch-label">${t('Sauvegarde des sessions')}</span>
+      <p class="hint">${t('Gère tes sessions dans un fichier pour les exporter ou les importer sur un autre ordinateur. Le code du parent s’il existe n’y est pas inclus. Il faut en recréer un nouveau.')}</p>
+      <div class="row-actions"><button type="button" data-act="sessions-export"${app.sessions.length ? '' : ' disabled'}>${t('Exporter')}</button>
+        <button type="button" data-act="sessions-import">${t('Importer')}</button>
+        <input id="session-file" type="file" accept=".json,application/json" hidden></div>
+      ${missingPanel()}</div>`;
+}
+
+/** Chaînes des sessions importées que cet ordinateur ne suit pas encore. */
+function missingPanel() {
+  if (!app.missing.length) return '';
+  const names = app.missing.map((c) => esc(c.title)).join(', ');
+  return `<div class="missing"><p class="hint">${tn(app.missing.length, '{n} chaîne de ces sessions n’est pas encore suivie ici :', '{n} chaînes de ces sessions ne sont pas encore suivies ici :')} ${names}.</p>
+    <div class="row-actions"><button type="button" class="primary" data-act="follow-missing">${t('Suivre les chaînes manquantes')}</button>
+      <button type="button" class="quiet" data-act="missing-dismiss">${t('Ignorer')}</button></div></div>`;
+}
+
 /** Recharge tout après l'entrée ou la sortie du mode enfant. */
 async function reloadAfterKidChange() {
   closePlayer();
@@ -589,6 +651,36 @@ document.querySelector('#kid-exit').addEventListener('click', async () => {
 view.addEventListener('input', (event) => {
   if (event.target.id === 'session-name' && app.sessionEdit) app.sessionEdit.name = event.target.value;
 });
+view.addEventListener('change', async (event) => {
+  if (event.target.id !== 'session-file') return;
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const report = await invoke('sessions_import', { json: await file.text() });
+    app.sessions = await invoke('sessions_list');
+    app.missing = report.missing;
+    renderChannels();
+    setStatus(tn(report.imported, '{n} session importée', '{n} sessions importées'));
+    // Le fichier ne contient jamais le code : sans code sur cet ordinateur, on propose d'en créer un (vide = 0000).
+    if (!app.kid.has_pin) {
+      let byDefault = false;
+      const done = await askPin(
+        t('Code du parent'),
+        t('Choisis un code à 4 chiffres pour cet ordinateur. Laisse vide pour utiliser 0000.'),
+        (pin) => {
+          byDefault = pin.trim() === '';
+          return invoke('kid_set_pin', { pin: byDefault ? '0000' : pin, current: null });
+        },
+      );
+      app.kid = await invoke('kid_status');
+      if (done) setStatus(byDefault ? t('Code 0000 défini : à changer.') : t('Code du parent enregistré'));
+      renderChannels();
+    }
+  } catch (err) {
+    setStatus(String(err), 'error');
+  }
+});
 view.addEventListener('change', (event) => {
   const id = event.target.dataset?.pick;
   if (!id || !app.sessionEdit) return;
@@ -652,7 +744,8 @@ function renderChannels() {
         </div>
       </div>
       ${toggle('autoupdate', t('Mise à jour automatique'), t('Télécharge et installe les nouvelles versions au démarrage, puis relance Kiosque.'), 'data-setting="auto_update"', s.auto_update === '1')}
-      ${toggle('autostart', t('Lancer au démarrage'), t('Kiosque s’ouvre en même temps que ton ordinateur.'), 'data-local="autostart"', app.autostart)}`,
+      ${toggle('autostart', t('Lancer au démarrage'), t('Kiosque s’ouvre en même temps que ton ordinateur.'), 'data-local="autostart"', app.autostart)}
+      ${sessionsBackup()}`,
   };
 
   view.classList.toggle('scrolled', view.scrollTop > 2);
@@ -730,11 +823,11 @@ async function switchTab(tab) {
 
 // ---------- actions ----------
 
-async function refresh() {
+async function refresh(quiet = false) {
   if (app.busy) return;
   app.busy = true;
   refreshBtn.disabled = true;
-  setStatus(t('Actualisation…'));
+  if (!quiet) setStatus(t('Actualisation…'), 'busy');
   try {
     const report = await invoke('refresh');
     await loadChannels();
@@ -746,7 +839,7 @@ async function refresh() {
     } else if (report.new_videos) {
       const n = report.new_videos;
       setStatus(tn(n, '{n} nouvelle vidéo', '{n} nouvelles vidéos'));
-    } else {
+    } else if (!quiet) {
       setStatus(t('À jour'));
     }
   } catch (err) {
@@ -833,6 +926,27 @@ view.addEventListener('click', async (event) => {
         await invoke('kid_start', { sessionId: button.closest('[data-session]').dataset.session });
         await reloadAfterKidChange();
         return setStatus(t('Mode enfant activé'));
+      }
+      case 'sessions-export': {
+        const path = await invoke('sessions_export');
+        return setStatus(t('Exporté : {path}', { path }));
+      }
+      case 'sessions-import':
+        return document.querySelector('#session-file').click();
+      case 'missing-dismiss':
+        app.missing = [];
+        return renderChannels();
+      case 'follow-missing': {
+        setStatus(t('Ajout des chaînes…'), 'busy');
+        const report = await invoke('follow_channels', { ids: app.missing.map((c) => c.id) });
+        await loadChannels();
+        const left = app.missing.filter((c) => !app.channels.some((x) => x.id === c.id));
+        app.missing = left;
+        renderChannels();
+        if (report.failed.length) {
+          return setStatus(t('{n} chaîne(s) non ajoutée(s) : {detail}', { n: report.failed.length, detail: report.failed[0] }), 'error');
+        }
+        return setStatus(tn(report.followed, '{n} chaîne ajoutée', '{n} chaînes ajoutées'));
       }
       case 'pin-open':
         app.pinForm = true;
@@ -954,7 +1068,7 @@ view.addEventListener('submit', async (event) => {
   const value = input.value.trim();
   if (!value) return;
   submit.disabled = true;
-  setStatus(t('Recherche de la chaîne…'));
+  setStatus(t('Recherche de la chaîne…'), 'busy');
   try {
     const channel = await invoke('add_channel', { input: value });
     const already = app.channels.some((c) => c.id === channel.id);
@@ -1151,7 +1265,7 @@ document.querySelector('#update').addEventListener('click', async (event) => {
     await loadChannels();
     await loadVideos();
     render();
-    if (app.channels.length) refresh();
+    if (app.channels.length) refresh(true);
     checkUpdate();
   } catch (err) {
     setStatus(String(err), 'error');
