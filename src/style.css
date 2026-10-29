@@ -791,3 +791,17 @@ body.kid .tabs [data-tab="channels"] { display: none; }
   @keyframes toast-in { from { opacity: 0; transform: translateX(-16px); } }
 }
 @media (prefers-reduced-motion: reduce) { .toast.out { opacity: 0; } .toast-icon { animation: none !important; } }
+
+/* Onglet Sessions : moins d'air en haut et en bas, bouton « Nouvelle session » avec le titre de la liste. */
+.sessions-panel { margin: -10px 0 -16px; }
+.sessions-panel > :first-child { margin-top: 0; }
+.sessions-panel > :last-child { margin-bottom: 0; }
+.sp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
+.sp-head .switch-label { font-weight: 600; }
+.sp-head button { padding: 4px 12px; font-size: 13px; }
+.sessions { margin-top: 6px; }
+.field.pin { margin-top: 16px; }
+.field.pin .hint { margin: 0 0 8px; }
+.field.pin .text { max-width: none; }
+.kid-badge { max-width: none; flex-shrink: 0; }
+.sessions-panel { margin-bottom: -4px; }

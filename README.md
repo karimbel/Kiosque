@@ -82,23 +82,25 @@ Sous Windows, `construire.bat` fabrique l'installeur avec ton Rust local (`src-t
 
 Les titres entièrement en majuscules sont remis en minuscules (le titre d'origine s'affiche au survol) et les miniatures sont masquées par défaut (case à cocher dans Chaînes).
 
-## Sessions et mode enfant
+## Sessions et mode protection
 
-Dans **Chaînes → Sessions**, tu crées des sessions : des listes de chaînes (« Les enfants », « Info »…). Le **mode enfant** verrouille Kiosque sur une session :
+Dans **Chaînes → Sessions**, tu crées des sessions : des listes de chaînes (« Les enfants », « Info »…). Le **mode protection** verrouille Kiosque sur une session :
 
 - seules les chaînes de la session sont visibles (vidéos, compteurs, filtres) ;
 - plus d'onglet Chaînes, de réglages, d'ajout de chaîne, de liens externes ni de mise à jour ;
-- on en sort avec le **code du parent** (4 chiffres, à définir avant le premier lancement), via le bouton cadenas en haut à droite.
+- on en sort avec le **code de protection** (4 chiffres, à définir avant le premier lancement), via le bouton cadenas en haut à droite.
 
 Le verrou est appliqué aussi côté Rust (l'interface seule ne suffit pas) ; le code est stocké salé et haché, et les essais ratés sont espacés dans le temps. Le mode reste actif après redémarrage.
 
-![Onglet Sessions : liste des sessions et code du parent](docs/apercu-sessions.png)
+![Onglet Sessions : liste des sessions et code de protection](docs/apercu-sessions.png)
 
-![Kiosque en mode enfant : seules les chaînes de la session](docs/apercu-mode-enfant.png)
+![Kiosque en mode protection : seules les chaînes de la session](docs/apercu-mode-protection.png)
 
-![Fenêtre du code du parent pour quitter le mode enfant](docs/apercu-code-parent.png)
+![Fenêtre du code de protection pour quitter le mode protection](docs/apercu-code-protection.png)
 
-**Sauvegarde et transfert** : dans Chaînes → Système, « Exporter » écrit `kiosque-sessions.json` dans le dossier Téléchargements (noms de sessions et chaînes, jamais le code du parent). Sur un autre ordinateur, « Importer » lit ce fichier sans jamais écraser une session existante (un nom déjà pris reçoit un numéro). Les chaînes que cet ordinateur ne suit pas encore sont listées, et « Suivre les chaînes manquantes » les ajoute (une plateforme désactivée n'est pas activée d'office). Si le nouvel ordinateur n'a pas encore de code du parent, Kiosque t'en fait créer un après l'import (laissé vide, il vaut `0000` : change-le). Un code déjà défini n'est jamais modifié par un import.
+![Sauvegarde des sessions : exporter, importer](docs/apercu-sauvegarde.png)
+
+**Sauvegarde et transfert** : dans Chaînes → Système, « Exporter » écrit `kiosque-sessions.json` dans le dossier Téléchargements (noms de sessions et chaînes, jamais le code de protection). Sur un autre ordinateur, « Importer » lit ce fichier sans jamais écraser une session existante (un nom déjà pris reçoit un numéro). Les chaînes que cet ordinateur ne suit pas encore sont listées, et « Suivre les chaînes manquantes » les ajoute (une plateforme désactivée n'est pas activée d'office). Si le nouvel ordinateur n'a pas encore de code de protection, Kiosque t'en fait créer un après l'import (laissé vide, il vaut `0000` : change-le). Un code déjà défini n'est jamais modifié par un import.
 
 **Code oublié** : il n'existe volontairement aucun moyen de le contourner. Il faut supprimer la base de données (`kiosque.sqlite3`, voir « Où sont les données ») et réajouter tes chaînes, ou réinstaller après avoir supprimé le dossier de données.
 

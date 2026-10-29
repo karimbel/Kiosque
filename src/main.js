@@ -40,7 +40,7 @@ const app = {
   sub: (() => { try { return localStorage.getItem('sub') || 'platforms'; } catch { return 'mine'; } })(),
   version: '',
   busy: false,
-  kid: { active: false, session_name: '', has_pin: false }, // mode enfant
+  kid: { active: false, session_name: '', has_pin: false }, // mode protection
   sessions: [],
   sessionEdit: null, // session en cours de modification : { id, name, channels:Set }
   pinForm: false,
@@ -352,7 +352,7 @@ function emptyState() {
   const n = app.channels.length;
   if (app.kid.active && n === 0) {
     return `<div class="empty"><img src="logo.svg" alt=""><h2>${t('Aucune chaîne dans cette session')}</h2>
-      <p>${t('Un parent peut en ajouter dans Chaînes → Sessions.')}</p></div>`;
+      <p>${t('Quitte le mode protection pour ajouter des chaînes à cette session.')}</p></div>`;
   }
   if (app.tab === 'new') {
     if (n === 0) {
@@ -519,9 +519,13 @@ const PLAYER_HINTS = {
   browser: 'La vidéo s’ouvre dans ton navigateur habituel.',
 }; // traduits à l'affichage
 
-// ---------- sessions et mode enfant ----------
+// ---------- sessions et mode protection ----------
 
 function sessionsPanel() {
+  return `<div class="sessions-panel">${sessionsPanelBody()}</div>`;
+}
+
+function sessionsPanelBody() {
   const ed = app.sessionEdit;
   if (ed) {
     const rows = app.channels.map((c) => `<label class="pick"><input type="checkbox" data-pick="${esc(c.id)}" ${ed.channels.has(c.id) ? 'checked' : ''}>
@@ -536,29 +540,36 @@ function sessionsPanel() {
   const list = app.sessions.length
     ? `<ul class="sessions">${app.sessions.map((s) => `<li data-session="${esc(s.id)}">
         <span class="sname">${esc(s.name)}<span class="note">${tn(s.channels.length, '{n} chaîne', '{n} chaînes')}</span></span>
-        <span class="sact"><button type="button" class="primary small" data-act="session-launch">${t('Lancer')}</button>
+        <span class="sact">${app.kid.has_pin ? `<button type="button" class="primary small" data-act="session-launch">${t('Lancer')}</button>` : ''}
           <button type="button" class="quiet" data-act="session-edit">${t('Modifier')}</button>
           <button type="button" class="quiet" data-act="session-delete" aria-label="${esc(t('Supprimer {name}', { name: s.name }))}" title="${esc(t('Supprimer cette session'))}">×</button></span></li>`).join('')}</ul>`
     : `<p class="hint">${t('Aucune session pour l’instant.')}</p>`;
-  const pin = app.kid.has_pin
-    ? `<p class="hint">${t('Un code est défini.')}</p>`
-    : `<p class="hint">${t('Aucun code : choisis-en un avant de lancer le mode enfant.')}</p>`;
-  const pinForm = app.pinForm
-    ? `${app.kid.has_pin ? `<input id="pin-current" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Code actuel'))}" aria-label="${esc(t('Code actuel'))}">` : ''}
-       <input id="pin-new" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Nouveau code (4 chiffres)'))}" aria-label="${esc(t('Nouveau code (4 chiffres)'))}">
-       <div class="row-actions"><button type="button" class="primary" data-act="pin-save">${t('Enregistrer')}</button>
-         <button type="button" class="quiet" data-act="pin-cancel">${t('Annuler')}</button></div>`
-    : `<button type="button" data-act="pin-open">${app.kid.has_pin ? t('Changer le code') : t('Choisir un code')}</button>`;
-  return `<p class="hint">${t('Une session est une liste de chaînes. Le mode enfant la verrouille : seules ces chaînes sont visibles, sans ajout, sans réglages ni liens externes.')}</p>
+  // Assistant : pas de session = pas de code. Dès la première session, on choisit le code (vide = 0000).
+  // Ensuite la zone du code reste repliée derrière « Changer le code ».
+  const hasPin = app.kid.has_pin;
+  const hasSessions = app.sessions.length > 0;
+  const codeForm = !hasPin || app.pinForm;
+  let codeZone = '';
+  if (hasSessions || hasPin) {
+    codeZone = codeForm
+      ? `<div class="field pin"><span class="switch-label">${t('Code de protection')}</span>
+          <p class="hint">${hasPin ? t('Ce code est unique : il est valable pour toutes les sessions.') : t('Valable pour toutes les sessions. Laisse vide pour utiliser 0000.')}</p>
+          ${hasPin ? `<input id="pin-current" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Code actuel'))}" aria-label="${esc(t('Code actuel'))}">` : ''}
+          <input id="pin-new" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Nouveau code (4 chiffres)'))}" aria-label="${esc(t('Nouveau code (4 chiffres)'))}">
+          <div class="row-actions"><button type="button" class="primary" data-act="pin-save">${t('Enregistrer')}</button>
+            ${hasPin ? `<button type="button" class="quiet" data-act="pin-cancel">${t('Annuler')}</button>` : ''}</div></div>`
+      : `<div class="field pin"><button type="button" data-act="pin-open">${t('Changer le code')}</button></div>`;
+  }
+  return `<p class="hint">${t('Une session est une liste de chaînes. Le mode protection la verrouille : seules ces chaînes sont visibles, sans ajout, sans réglages ni liens externes.')}</p>
+    <div class="sp-head"><span class="switch-label">${t('Mes sessions')}</span>${codeForm && hasSessions ? '' : `<button type="button" data-act="session-new">${t('Nouvelle session')}</button>`}</div>
     ${list}
-    <div class="row-actions"><button type="button" data-act="session-new">${t('Nouvelle session')}</button></div>
-    <div class="field pin"><span class="switch-label">${t('Code du parent')}</span>${pin}${pinForm}</div>`;
+    ${codeZone}`;
 }
 
 /** Sauvegarde et transfert des sessions (réglages Système). */
 function sessionsBackup() {
   return `<div class="field backup"><span class="switch-label">${t('Sauvegarde des sessions')}</span>
-      <p class="hint">${t('Gère tes sessions dans un fichier pour les exporter ou les importer sur un autre ordinateur. Le code du parent s’il existe n’y est pas inclus. Il faut en recréer un nouveau.')}</p>
+      <p class="hint">${t('Gère tes sessions dans un fichier pour les exporter ou les importer sur un autre ordinateur. Le code de protection s’il existe n’y est pas inclus. Il faut en recréer un nouveau.')}</p>
       <div class="row-actions"><button type="button" data-act="sessions-export"${app.sessions.length ? '' : ' disabled'}>${t('Exporter')}</button>
         <button type="button" data-act="sessions-import">${t('Importer')}</button>
         <input id="session-file" type="file" accept=".json,application/json" hidden></div>
@@ -574,7 +585,7 @@ function missingPanel() {
       <button type="button" class="quiet" data-act="missing-dismiss">${t('Ignorer')}</button></div></div>`;
 }
 
-/** Recharge tout après l'entrée ou la sortie du mode enfant. */
+/** Recharge tout après l'entrée ou la sortie du mode protection. */
 async function reloadAfterKidChange() {
   closePlayer();
   app.kid = await invoke('kid_status');
@@ -594,14 +605,14 @@ function applyKid() {
   const button = document.querySelector('#kid-exit');
   button.hidden = !on;
   if (on) {
-    button.querySelector('.kid-name').textContent = t('Mode enfant');
-    button.title = t('Session : {name} — quitter le mode enfant (code du parent)', { name: app.kid.session_name });
+    button.querySelector('.kid-name').textContent = t('Mode protection');
+    button.title = t('Session : {name} — quitter le mode protection (code de protection)', { name: app.kid.session_name });
     document.querySelector('#update').hidden = true;
     if (app.tab === 'channels') app.tab = 'new';
   }
 }
 
-/** Demande le code du parent dans une fenêtre ; `action(code)` doit lever une erreur si le code est refusé. */
+/** Demande le code de protection dans une fenêtre ; `action(code)` doit lever une erreur si le code est refusé. */
 function askPin(title, hint, action) {
   const modal = document.querySelector('#pin-modal');
   const input = document.querySelector('#pin-input');
@@ -642,10 +653,10 @@ function askPin(title, hint, action) {
 }
 
 document.querySelector('#kid-exit').addEventListener('click', async () => {
-  const done = await askPin(t('Code du parent'), t('Saisis le code pour quitter le mode enfant.'), (pin) => invoke('kid_stop', { pin }));
+  const done = await askPin(t('Code de protection'), t('Saisis le code pour quitter le mode protection.'), (pin) => invoke('kid_stop', { pin }));
   if (!done) return;
   await reloadAfterKidChange();
-  setStatus(t('Mode enfant désactivé'));
+  setStatus(t('Mode protection désactivé'));
 });
 
 view.addEventListener('input', (event) => {
@@ -666,7 +677,7 @@ view.addEventListener('change', async (event) => {
     if (!app.kid.has_pin) {
       let byDefault = false;
       const done = await askPin(
-        t('Code du parent'),
+        t('Code de protection'),
         t('Choisis un code à 4 chiffres pour cet ordinateur. Laisse vide pour utiliser 0000.'),
         (pin) => {
           byDefault = pin.trim() === '';
@@ -674,7 +685,7 @@ view.addEventListener('change', async (event) => {
         },
       );
       app.kid = await invoke('kid_status');
-      if (done) setStatus(byDefault ? t('Code 0000 défini : à changer.') : t('Code du parent enregistré'));
+      if (done) setStatus(byDefault ? t('Code 0000 défini : à changer.') : t('Code de protection enregistré'));
       renderChannels();
     }
   } catch (err) {
@@ -921,11 +932,11 @@ view.addEventListener('click', async (event) => {
         if (!app.kid.has_pin) {
           app.pinForm = true;
           renderChannels();
-          return setStatus(t('Choisis d’abord un code du parent.'), 'error');
+          return setStatus(t('Choisis d’abord un code de protection.'), 'error');
         }
         await invoke('kid_start', { sessionId: button.closest('[data-session]').dataset.session });
         await reloadAfterKidChange();
-        return setStatus(t('Mode enfant activé'));
+        return setStatus(t('Mode protection activé'));
       }
       case 'sessions-export': {
         const path = await invoke('sessions_export');
@@ -956,11 +967,14 @@ view.addEventListener('click', async (event) => {
         return renderChannels();
       case 'pin-save': {
         const current = document.querySelector('#pin-current')?.value ?? null;
-        await invoke('kid_set_pin', { pin: document.querySelector('#pin-new').value, current });
+        let pin = document.querySelector('#pin-new').value;
+        const byDefault = !app.kid.has_pin && pin.trim() === '';
+        if (byDefault) pin = '0000';
+        await invoke('kid_set_pin', { pin, current });
         app.kid = await invoke('kid_status');
         app.pinForm = false;
         renderChannels();
-        return setStatus(t('Code enregistré'));
+        return setStatus(byDefault ? t('Code 0000 défini : à changer.') : t('Code enregistré'));
       }
       case 'reset-filters':
         minimizePlayer();

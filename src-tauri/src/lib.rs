@@ -27,8 +27,8 @@ struct AppState {
 fn require_unlocked(state: &AppState) -> Result<(), String> {
     if kids::active(&state.db).ok().flatten().is_some() {
         return Err(tr!(
-            "Indisponible en mode enfant : un parent doit d'abord le quitter.",
-            "Not available in kids mode: a parent must leave it first."
+            "Indisponible en mode protection : il faut d'abord le quitter.",
+            "Not available in protection mode: leave it first."
         ));
     }
     Ok(())
