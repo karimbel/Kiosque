@@ -632,44 +632,6 @@ button.quiet:hover:not(:disabled) { color: var(--ink); border-color: transparent
 .player-msg[hidden] { display: none; }
 .player-msg p { margin: 0; max-width: 40ch; font-size: 18px; }
 
-/* Commandes de lecture aux couleurs de Kiosque. */
-.controls {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 10px clamp(12px, 2vw, 24px);
-  background: #0d2227;
-  border-top: 3px solid var(--awning-red);
-}
-.controls button.ctl {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  color: #fff;
-}
-.controls button.ctl:hover:not(:disabled) { background: rgb(255 255 255 / 0.16); border: 0; }
-.controls :focus-visible { outline-color: #fff; }
-.time { flex: none; font-size: 14px; font-variant-numeric: tabular-nums; color: #c9d7d4; white-space: nowrap; }
-
-.range {
-  appearance: none;
-  height: 6px;
-  margin: 0;
-  border-radius: 999px;
-  cursor: pointer;
-  --pct: 0%;
-  background: linear-gradient(to right, var(--awning-red) var(--pct), rgb(255 255 255 / 0.25) var(--pct));
-}
-.range.seek { flex: 1; min-width: 60px; }
-.range.volume { width: 90px; flex: none; --pct: 100%; }
-.range::-webkit-slider-thumb { appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 1px 3px rgb(0 0 0 / 0.5); }
-.range::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 0; }
-
 /* ---------- barre de navigation rétractable ---------- */
 
 .awning-small { display: none; }
@@ -714,14 +676,12 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
   .tagline { font-size: 13px; }
   .player-bar { flex-wrap: wrap; gap: 8px 12px; }
   .player-info { flex-basis: 100%; order: 3; }
-  .range.volume, .time { display: none; }
 }
 
 /* Plateformes autres que YouTube */
 .pf,.fo{font-size:.72rem;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
 .pf{border-color:var(--awning-red);color:var(--accent);background:color-mix(in srgb,var(--awning-red) 10%,transparent)}
 .fo{color:var(--muted);background:color-mix(in srgb,var(--line) 55%,transparent)}
-.player-stage.native .controls{display:none}
 .player-stage.native #yt-host iframe{width:100%;height:100%;border:0;display:block}
 
 /* Nouvelle version disponible */
@@ -752,11 +712,8 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 .player.mini .close-mini { font-size: 20px; line-height: 1; }
 .player.mini .player-stage { flex: none; }
 .player.mini .video-area { flex: none; aspect-ratio: 16 / 9; }
-.player.mini .controls { display: none; }
 
-.controls button.cc[aria-pressed="true"] { background: rgb(255 255 255 / 0.22); color: #fff; box-shadow: inset 0 -3px 0 var(--awning-red); border-radius: 8px; }
 
-.controls button.speed { width: auto; min-width: 46px; padding: 0 8px; border-radius: 8px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .channels .tags { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .channels .tags .folder-slot { display: inline-flex; }
@@ -783,10 +740,6 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 .feed .item:hover .title { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .feed .item { transition: none; } }
 
-/* Voile transparent sur la vidéo YouTube : YouTube n'affiche plus ses boutons « Plus de vidéos » et son logo
-   au survol, et un clic sur l'image lance ou met en pause. Absent des lecteurs des autres plateformes. */
-.yt-shield { position: absolute; inset: 0; cursor: default; }
-.player-stage.native .yt-shield { display: none; }
 .channels .tags .pf { font-size: 12px; font-weight: 500; padding: 1px 10px; }
 
 /* Édition du dossier : le champ reste sur la ligne de la source, il ne passe pas dessous. */
@@ -794,15 +747,3 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 .channels .tags:has(.folder-edit) .pf { flex: none; }
 .channels .tags:has(.folder-edit) .folder-slot { flex: 1; min-width: 0; }
 .channels .tags .folder-edit { width: 100%; margin: 0; }
-
-/* Plein écran : la vidéo occupe tout l'écran, la barre de commandes flotte dessus et se cache à l'inactivité. */
-.player-stage:fullscreen { position: relative; }
-.player-stage:fullscreen .video-area { position: absolute; inset: 0; flex: none; }
-.player-stage:fullscreen .controls {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
-  border-top: 0; padding-top: 28px;
-  background: linear-gradient(to top, rgb(13 34 39 / 0.92), rgb(13 34 39 / 0));
-  transition: opacity 0.25s ease;
-}
-.player-stage:fullscreen.idle .controls { opacity: 0; pointer-events: none; }
-.player-stage:fullscreen.idle { cursor: none; }

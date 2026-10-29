@@ -105,27 +105,15 @@ function confirmClick(button, label, ms = 3000) {
 }
 
 // ---------- lecteur intégré ----------
-// Le flux vient de YouTube (API « IFrame ») mais l'interface de lecture est celle de Kiosque :
-// YouTube n'affiche que l'image, les commandes ci-dessous pilotent la vidéo.
+// Lecteur YouTube standard (API « IFrame »), avec ses propres commandes, en lecture automatique.
 
 const playerEl = document.querySelector('#player');
-let captionsOn = (() => { try { return localStorage.getItem('cc') === '1'; } catch { return false; } })();
-const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
-let speed = (() => { try { const s = Number(localStorage.getItem('speed')); return SPEEDS.includes(s) ? s : 1; } catch { return 1; } })();
-const speedLabel = (s) => `${String(s).replace('.', lang === 'en' ? '.' : ',')}×`;
 let playing = null;      // vidéo en cours
 let yt = null;           // lecteur YouTube
-let ytTimer = null;      // rafraîchissement de la barre de progression
 let ytLoading = null;    // chargement unique du script YouTube
 
 const ICONS = {
-  play: '<path d="M8 5.5v13l11-6.5z" fill="currentColor"/>',
-  pause: '<path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor"/>',
-  volume: '<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor"/><path d="M15 9a4.5 4.5 0 0 1 0 6M17.5 6.5a8 8 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-  muted: '<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor"/><path d="M15.5 9.5l5 5M20.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   full: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
-  cc: '<rect x="3" y="5.5" width="18" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.5 10.3a2.3 2.3 0 1 0 0 3.4M17 10.3a2.3 2.3 0 1 0 0 3.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
-  exit: '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">${ICONS[name]}</svg>`;
 
@@ -143,14 +131,6 @@ function loadYouTubeApi() {
   return ytLoading;
 }
 
-const clock = (sec) => {
-  const t = Math.max(0, Math.floor(sec || 0));
-  const h = Math.floor(t / 3600);
-  const m = Math.floor((t % 3600) / 60);
-  const s = String(t % 60).padStart(2, '0');
-  return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
-};
-
 const q = (sel) => playerEl.querySelector(sel);
 
 function showPlayerMessage(text) {
@@ -158,38 +138,6 @@ function showPlayerMessage(text) {
   if (!box) return;
   box.querySelector('p').textContent = text;
   box.hidden = false;
-}
-
-function syncControls() {
-  if (!yt || typeof yt.getPlayerState !== 'function') return;
-  const state = yt.getPlayerState();
-  const isPlaying = state === 1 || state === 3; // lecture ou mise en mémoire
-  const toggle = q('[data-ctl="toggle"]');
-  if (toggle) {
-    toggle.innerHTML = icon(isPlaying ? 'pause' : 'play');
-    toggle.setAttribute('aria-label', t(isPlaying ? 'Pause' : 'Lire'));
-  }
-  const duration = yt.getDuration?.() || 0;
-  const current = yt.getCurrentTime?.() || 0;
-  const seek = q('[data-ctl="seek"]');
-  if (seek && !seek.dataset.drag) {
-    seek.value = duration ? String(Math.round((current / duration) * 1000)) : '0';
-    seek.style.setProperty('--pct', `${duration ? (current / duration) * 100 : 0}%`);
-  }
-  const time = q('.time');
-  if (time) time.textContent = `${clock(current)} / ${clock(duration)}`;
-  const muted = yt.isMuted?.();
-  const mute = q('[data-ctl="mute"]');
-  if (mute) {
-    mute.innerHTML = icon(muted ? 'muted' : 'volume');
-    mute.setAttribute('aria-label', t(muted ? 'Activer le son' : 'Couper le son'));
-  }
-  const volume = q('[data-ctl="volume"]');
-  if (volume && !volume.dataset.drag) {
-    const level = muted ? 0 : (yt.getVolume?.() ?? 100);
-    volume.value = String(level);
-    volume.style.setProperty('--pct', `${level}%`);
-  }
 }
 
 /** Seules les adresses de lecteurs intégrés sont acceptées, jamais une page de site. */
@@ -212,19 +160,8 @@ function createYtPlayer(video, startAt) {
     videoId: video.id,
     width: '100%',
     height: '100%',
-    playerVars: {
-      autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, iv_load_policy: 3,
-      modestbranding: 1, playsinline: 1, hl: lang,
-      cc_load_policy: captionsOn ? 1 : 0, start: Math.floor(startAt),
-    },
+    playerVars: { autoplay: 1, playsinline: 1, rel: 0, hl: lang, start: Math.floor(startAt) },
     events: {
-      onReady: () => {
-        try { yt.setPlaybackRate(speed); } catch { /* facultatif */ }
-        syncControls();
-        enforceCaptions();
-        if (captionsOn) pickCaptionTrack();
-      },
-      onStateChange: syncControls,
       onError: (e) => {
         const code = e?.data;
         showPlayerMessage(
@@ -260,21 +197,10 @@ async function openPlayer(video) {
     <div class="player-stage" id="player-stage">
       <div class="video-area">
         <div id="yt-host"></div>
-        <div class="yt-shield" data-ctl="toggle" aria-hidden="true"></div>
         <div class="player-msg" hidden role="alert">
           <p></p>
           <button type="button" class="primary" data-player="external">${t('Ouvrir dans le navigateur')}</button>
         </div>
-      </div>
-      <div class="controls">
-        <button type="button" class="ctl" data-ctl="toggle" aria-label="${t('Lire')}">${icon('play')}</button>
-        <input class="range seek" type="range" min="0" max="1000" step="1" value="0" data-ctl="seek" aria-label="${t('Position dans la vidéo')}">
-        <span class="time">0:00 / 0:00</span>
-        <button type="button" class="ctl" data-ctl="mute" aria-label="${t('Couper le son')}">${icon('volume')}</button>
-        <input class="range volume" type="range" min="0" max="100" step="1" value="100" data-ctl="volume" aria-label="${t('Volume')}">
-        <button type="button" class="ctl speed" data-ctl="speed" aria-label="${t('Vitesse de lecture')}" title="${t('Vitesse de lecture')}">${speedLabel(speed)}</button>
-        <button type="button" class="ctl cc" data-ctl="cc" aria-label="${t('Sous-titres')}" aria-pressed="${captionsOn}" title="${t('Sous-titres (si la vidéo en propose)')}">${icon('cc')}</button>
-        <button type="button" class="ctl" data-ctl="full" aria-label="${t('Plein écran')}">${icon('full')}</button>
       </div>
     </div>`;
   playerEl.hidden = false;
@@ -303,7 +229,6 @@ async function openPlayer(video) {
   if (playing !== video) return; // fermé pendant le chargement
 
   createYtPlayer(video, 0);
-  ytTimer = setInterval(syncControls, 250);
 }
 
 /** Réduit le lecteur dans le coin bas droit : la vidéo continue pendant la navigation. */
@@ -319,8 +244,6 @@ function expandPlayer() {
 }
 
 function closePlayer() {
-  clearInterval(ytTimer);
-  ytTimer = null;
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   try { yt?.destroy?.(); } catch { /* déjà détruit */ }
   yt = null;
@@ -330,98 +253,7 @@ function closePlayer() {
   playerEl.innerHTML = '';
 }
 
-function togglePlay() {
-  if (!yt?.getPlayerState) return;
-  const state = yt.getPlayerState();
-  if (state === 1 || state === 3) yt.pauseVideo(); else yt.playVideo();
-  setTimeout(syncControls, 50);
-}
-
-function toggleMute() {
-  if (!yt?.isMuted) return;
-  if (yt.isMuted()) { yt.unMute(); if (!yt.getVolume()) yt.setVolume(60); } else yt.mute();
-  setTimeout(syncControls, 50);
-}
-
-/** Passe à la vitesse suivante (0,75× → 1× → 1,25× → 1,5× → 2× → 0,75×). */
-function cycleSpeed() {
-  if (!yt?.setPlaybackRate) return;
-  speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
-  try { localStorage.setItem('speed', String(speed)); } catch { /* facultatif */ }
-  yt.setPlaybackRate(speed);
-  const button = q('[data-ctl="speed"]');
-  if (button) button.textContent = speedLabel(speed);
-}
-
-/** Active ou coupe les sous-titres : le lecteur est relancé à l'endroit où tu en étais. */
-/**
- * YouTube retient le dernier choix de sous-titres de la personne et peut l'appliquer malgré `cc_load_policy` :
- * on force donc l'état voulu en chargeant ou déchargeant le module de sous-titres, à plusieurs reprises
- * car il s'initialise un peu après le démarrage de la vidéo.
- */
-function enforceCaptions() {
-  const player = yt;
-  const apply = () => {
-    if (yt !== player) return; // le lecteur a été recréé entre-temps
-    for (const module of ['captions', 'cc']) {
-      try { captionsOn ? player.loadModule(module) : player.unloadModule(module); } catch { /* module absent */ }
-    }
-  };
-  for (const delay of [0, 600, 1500, 3000]) setTimeout(apply, delay);
-}
-
-function toggleCaptions() {
-  if (!yt?.loadModule || !playing) return;
-  captionsOn = !captionsOn;
-  try { localStorage.setItem('cc', captionsOn ? '1' : '0'); } catch { /* facultatif */ }
-  const button = q('[data-ctl="cc"]');
-  if (button) button.setAttribute('aria-pressed', String(captionsOn));
-  // Sans recréer le lecteur : la vidéo ne bouge pas, seuls les sous-titres apparaissent ou disparaissent.
-  enforceCaptions();
-  if (captionsOn) pickCaptionTrack();
-  setStatus(t(captionsOn ? 'Sous-titres activés (si la vidéo en propose)' : 'Sous-titres coupés'));
-}
-
-/** Choisit une piste de sous-titres quand le module vient d'être chargé : la langue de l'interface si possible. */
-function pickCaptionTrack() {
-  const player = yt;
-  const choose = () => {
-    if (yt !== player || !captionsOn) return;
-    try {
-      const tracks = player.getOption('captions', 'tracklist') || [];
-      if (!tracks.length) return;
-      const track = tracks.find((x) => (x.languageCode || '').startsWith(lang)) || tracks[0];
-      player.setOption('captions', 'track', { languageCode: track.languageCode });
-    } catch { /* la vidéo n'a pas de sous-titres */ }
-  };
-  for (const delay of [300, 1000, 2000]) setTimeout(choose, delay);
-}
-
-function toggleFullscreen() {
-  const stage = document.querySelector('#player-stage');
-  if (!stage) return;
-  if (document.fullscreenElement) document.exitFullscreen?.();
-  else stage.requestFullscreen?.().catch(() => {});
-}
-
-function seekBy(seconds) {
-  if (!yt?.getCurrentTime) return;
-  yt.seekTo(Math.max(0, yt.getCurrentTime() + seconds), true);
-  setTimeout(syncControls, 50);
-}
-
 playerEl.addEventListener('click', async (event) => {
-  const ctl = event.target.closest('[data-ctl]');
-  if (ctl) {
-    switch (ctl.dataset.ctl) {
-      case 'toggle': return togglePlay();
-      case 'mute': return toggleMute();
-      case 'speed': return cycleSpeed();
-      case 'cc': return toggleCaptions();
-      case 'full': return toggleFullscreen();
-    }
-    return;
-  }
   const button = event.target.closest('[data-player]');
   if (!button) return;
   if (button.dataset.player === 'close') return closePlayer();
@@ -437,76 +269,9 @@ playerEl.addEventListener('click', async (event) => {
   }
 });
 
-// Curseurs : la position et le volume suivent le doigt, la vidéo se déplace au relâchement du curseur.
-playerEl.addEventListener('input', (event) => {
-  const el = event.target;
-  if (!yt || !el.dataset?.ctl) return;
-  el.dataset.drag = '1';
-  if (el.dataset.ctl === 'seek') {
-    const duration = yt.getDuration?.() || 0;
-    el.style.setProperty('--pct', `${el.value / 10}%`);
-    const time = q('.time');
-    if (time) time.textContent = `${clock((el.value / 1000) * duration)} / ${clock(duration)}`;
-  } else if (el.dataset.ctl === 'volume') {
-    const v = Number(el.value);
-    if (v > 0 && yt.isMuted?.()) yt.unMute();
-    yt.setVolume(v);
-    el.style.setProperty('--pct', `${v}%`);
-  }
-});
-playerEl.addEventListener('change', (event) => {
-  const el = event.target;
-  if (!yt || !el.dataset?.ctl) return;
-  delete el.dataset.drag;
-  if (el.dataset.ctl === 'seek') {
-    const duration = yt.getDuration?.() || 0;
-    yt.seekTo((el.value / 1000) * duration, true);
-  }
-  setTimeout(syncControls, 50);
-});
-
-// Plein écran : la barre de commandes se cache après 2,5 s sans mouvement (sauf en pause) et revient au moindre geste.
-let idleTimer = null;
-function wakeControls() {
-  const stage = document.querySelector('#player-stage');
-  if (!stage) return;
-  stage.classList.remove('idle');
-  clearTimeout(idleTimer);
-  if (!document.fullscreenElement) return;
-  idleTimer = setTimeout(() => {
-    const state = yt?.getPlayerState?.();
-    const hovering = stage.querySelector('.controls:hover');
-    if (document.fullscreenElement && state === 1 && !hovering) stage.classList.add('idle');
-    else if (document.fullscreenElement) wakeControls(); // en pause ou survol : on réessaie plus tard
-  }, 2500);
-}
-for (const type of ['mousemove', 'mousedown', 'keydown', 'touchstart']) {
-  document.addEventListener(type, () => { if (document.fullscreenElement) wakeControls(); }, { passive: true });
-}
-
-document.addEventListener('fullscreenchange', () => {
-  wakeControls();
-  const full = q('[data-ctl="full"]');
-  if (!full) return;
-  const on = !!document.fullscreenElement;
-  full.innerHTML = icon(on ? 'exit' : 'full');
-  full.setAttribute('aria-label', t(on ? 'Quitter le plein écran' : 'Plein écran'));
-});
-
 document.addEventListener('keydown', (event) => {
   if (playerEl.hidden || playerEl.classList.contains('mini')) return;
-  const tag = event.target.tagName;
-  if (event.key === 'Escape') {
-    if (!document.fullscreenElement) minimizePlayer();
-    return;
-  }
-  if (event.target.type === 'range' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-  if (event.key === ' ' && tag !== 'BUTTON') { event.preventDefault(); togglePlay(); }
-  else if (event.key === 'ArrowRight') { event.preventDefault(); seekBy(5); }
-  else if (event.key === 'ArrowLeft') { event.preventDefault(); seekBy(-5); }
-  else if (event.key === 'c' || event.key === 'C') toggleCaptions();
-  else if (event.key === 'f' || event.key === 'F') toggleFullscreen();
-  else if (event.key === 'm' || event.key === 'M') toggleMute();
+  if (event.key === 'Escape' && !document.fullscreenElement) minimizePlayer();
 });
 
 // ---------- données ----------
