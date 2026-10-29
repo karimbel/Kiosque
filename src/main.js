@@ -561,7 +561,7 @@ function sessionsPanelBody() {
       : `<div class="field pin"><button type="button" data-act="pin-open">${t('Changer le code')}</button></div>`;
   }
   return `<p class="hint">${t('Une session est une liste de chaînes. Le mode protection la verrouille : seules ces chaînes sont visibles, sans ajout, sans réglages ni liens externes.')}</p>
-    <div class="sp-head"><span class="switch-label">${t('Mes sessions')}</span>${codeForm && hasSessions ? '' : `<button type="button" data-act="session-new">${t('Nouvelle session')}</button>`}</div>
+    <div class="sp-head"><span class="switch-label">${t('Mes sessions')}</span>${!hasPin && hasSessions ? '' : `<button type="button" data-act="session-new">${t('Nouvelle session')}</button>`}</div>
     ${list}
     ${codeZone}`;
 }
@@ -587,8 +587,9 @@ function missingPanel() {
 
 /** Recharge tout après l'entrée ou la sortie du mode protection. */
 async function reloadAfterKidChange() {
-  closePlayer();
   app.kid = await invoke('kid_status');
+  // À l'entrée du mode protection, une vidéo hors session ne doit pas continuer ; à la sortie, la lecture continue.
+  if (app.kid.active) closePlayer();
   app.sessionEdit = null;
   app.pinForm = false;
   setPlatform('');
