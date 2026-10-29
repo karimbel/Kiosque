@@ -88,7 +88,9 @@ Dans **Chaînes → Sessions**, tu crées des sessions : des listes de chaînes 
 
 - seules les chaînes de la session sont visibles (vidéos, compteurs, filtres) ;
 - plus d'onglet Chaînes, de réglages, d'ajout de chaîne, de liens externes ni de mise à jour ;
-- on en sort avec le **code de protection** (4 chiffres, à définir avant le premier lancement), via le bouton cadenas en haut à droite.
+- on en sort avec le **code de protection**, via le bouton cadenas en haut à droite.
+
+**Le code de protection** (4 chiffres) est **unique : il est valable pour toutes les sessions**, y compris celles créées ou importées plus tard. Kiosque le demande à la création de la première session ; laissé vide, il vaut `0000` (pense à le changer). Ensuite, « Changer le code » demande l'ancien code puis le nouveau.
 
 Le verrou est appliqué aussi côté Rust (l'interface seule ne suffit pas) ; le code est stocké salé et haché, et les essais ratés sont espacés dans le temps. Le mode reste actif après redémarrage.
 
