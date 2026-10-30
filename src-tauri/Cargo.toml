@@ -1,6 +1,6 @@
 [package]
 name = "kiosque"
-version = "0.3.7"
+version = "0.3.8"
 description = "Un lecteur de chaînes YouTube qui se termine"
 edition = "2021"
 

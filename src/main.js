@@ -550,7 +550,7 @@ function sessionsPanelBody() {
   const hasSessions = app.sessions.length > 0;
   const codeForm = !hasPin || app.pinForm;
   let codeZone = '';
-  if (hasSessions || hasPin) {
+  if (hasSessions) {
     codeZone = codeForm
       ? `<div class="field pin"><span class="switch-label">${t('Code de protection')}</span>
           <p class="hint">${hasPin ? t('Ce code est unique : il est valable pour toutes les sessions.') : t('Valable pour toutes les sessions. Laisse vide pour utiliser 0000.')}</p>
@@ -563,10 +563,11 @@ function sessionsPanelBody() {
   return `<p class="hint">${t('Une session est une liste de chaînes. Le mode protection la verrouille : seules ces chaînes sont visibles, sans ajout, sans réglages ni liens externes.')}</p>
     <div class="sp-head"><span class="switch-label">${t('Mes sessions')}</span>${!hasPin && hasSessions ? '' : `<button type="button" data-act="session-new">${t('Nouvelle session')}</button>`}</div>
     ${list}
-    ${codeZone}`;
+    ${codeZone}
+    ${sessionsBackup()}`;
 }
 
-/** Sauvegarde et transfert des sessions (réglages Système). */
+/** Sauvegarde et transfert des sessions (en bas de l'onglet Sessions, sous un séparateur). */
 function sessionsBackup() {
   return `<div class="field backup"><span class="switch-label">${t('Sauvegarde des sessions')}</span>
       <p class="hint">${t('Gère tes sessions dans un fichier pour les exporter ou les importer sur un autre ordinateur. Le code de protection s’il existe n’y est pas inclus. Il faut en recréer un nouveau.')}</p>
@@ -756,8 +757,7 @@ function renderChannels() {
         </div>
       </div>
       ${toggle('autoupdate', t('Mise à jour automatique'), t('Télécharge et installe les nouvelles versions au démarrage, puis relance Kiosque.'), 'data-setting="auto_update"', s.auto_update === '1')}
-      ${toggle('autostart', t('Lancer au démarrage'), t('Kiosque s’ouvre en même temps que ton ordinateur.'), 'data-local="autostart"', app.autostart)}
-      ${sessionsBackup()}`,
+      ${toggle('autostart', t('Lancer au démarrage'), t('Kiosque s’ouvre en même temps que ton ordinateur.'), 'data-local="autostart"', app.autostart)}`,
   };
 
   view.classList.toggle('scrolled', view.scrollTop > 2);

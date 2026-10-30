@@ -805,3 +805,4 @@ body.kid .tabs [data-tab="channels"] { display: none; }
 .field.pin .text { max-width: none; }
 .kid-badge { max-width: none; flex-shrink: 0; }
 .sessions-panel { margin-bottom: -4px; }
+.field.backup { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
