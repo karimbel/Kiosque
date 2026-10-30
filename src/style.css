@@ -688,7 +688,7 @@ html[data-nav="collapsed"] .top-actions { padding-bottom: 6px; }
 /* Lecteur réduit : reste en lecture dans le coin bas gauche pendant la navigation */
 .mini-only { display: none; }
 .player.mini {
-  position: fixed; inset: auto 16px 16px auto; z-index: 30;
+  position: fixed; inset: auto auto 16px 16px; z-index: 30;
   width: min(380px, calc(100vw - 32px)); height: auto;
   border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
@@ -770,7 +770,7 @@ body.kid .tabs [data-tab="channels"] { display: none; }
 .field.backup { margin-top: 20px; }
 
 /* ---------- notifications ---------- */
-#toasts { position: fixed; left: 16px; bottom: 16px; z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
+#toasts { position: fixed; left: 16px; bottom: calc(16px + var(--mini-h, 0px)); z-index: 60; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
 .toast {
   display: flex; align-items: flex-start; gap: 10px; padding: 11px 8px 11px 14px;
   border: 1px solid var(--line); border-left: 4px solid var(--ink); border-radius: 10px;
@@ -806,3 +806,4 @@ body.kid .tabs [data-tab="channels"] { display: none; }
 .kid-badge { max-width: none; flex-shrink: 0; }
 .sessions-panel { margin-bottom: -4px; }
 .field.backup { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media (prefers-reduced-motion: no-preference) { #toasts { transition: bottom .2s ease; } }

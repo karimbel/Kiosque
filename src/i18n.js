@@ -181,7 +181,7 @@ const EN = {
   'Un code est défini.': 'A code is set.',
   'Code actuel': 'Current code',
   'Nouveau code (4 chiffres)': 'New code (4 digits)',
-  'Changer le code': 'Change code',
+  'Changer le code de protection': 'Change protection code',
   'Choisir un code': 'Choose a code',
   'Une session est une liste de chaînes. Le mode protection la verrouille : seules ces chaînes sont visibles, sans ajout, sans réglages ni liens externes.': 'A session is a list of channels. Protection mode locks the app to it: only those channels are visible, with no adding, no settings and no external links.',
   'Nouvelle session': 'New session',

@@ -106,7 +106,7 @@ Le verrou est appliqué aussi côté Rust (l'interface seule ne suffit pas) ; le
 
 **Code oublié** : il n'existe volontairement aucun moyen de le contourner. Il faut supprimer la base de données (`kiosque.sqlite3`, voir « Où sont les données ») et réajouter tes chaînes, ou réinstaller après avoir supprimé le dossier de données.
 
-**Limites honnêtes** : c'est un garde-fou pour la maison, pas un contrôle parental de sécurité. Un enfant à l'aise avec l'ordinateur peut contourner (fermer l'appli, supprimer les données, ouvrir YouTube dans un navigateur). Les vidéos « à voir / vues » sont communes à tout le monde : ce qu'un enfant regarde apparaît dans l'historique. Une fois la vidéo lancée, YouTube garde ses propres liens (logo, suggestions de fin) dans le lecteur.
+**Limites honnêtes** : c'est un garde-fou pour la maison, pas un contrôle parental de sécurité. Un enfant à l'aise avec l'ordinateur peut contourner (fermer l'appli, supprimer les données, ouvrir YouTube dans un navigateur). Les vidéos « à voir / vues » sont communes à tout le monde : ce qu'un enfant regarde apparaît dans l'historique. Dans le lecteur YouTube, le clic sur le logo et sur les vidéos recommandées n'a aucun effet sous Windows (constaté) ; ce comportement n'a pas été vérifié sous macOS ni Linux, dont les vues web peuvent gérer ces liens autrement.
 
 ## Où sont les données
 

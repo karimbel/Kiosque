@@ -155,6 +155,11 @@ function confirmClick(button, label, ms = 3000) {
 // Lecteur YouTube standard (API « IFrame »), avec ses propres commandes, en lecture automatique.
 
 const playerEl = document.querySelector('#player');
+// Les notifications (bas à gauche) se placent au-dessus du lecteur réduit, qui occupe le même coin.
+new ResizeObserver(() => {
+  const mini = !playerEl.hidden && playerEl.classList.contains('mini');
+  document.documentElement.style.setProperty('--mini-h', mini ? `${playerEl.offsetHeight + 12}px` : '0px');
+}).observe(playerEl);
 let playing = null;      // vidéo en cours
 let yt = null;           // lecteur YouTube
 let ytLoading = null;    // chargement unique du script YouTube
@@ -553,12 +558,12 @@ function sessionsPanelBody() {
   if (hasSessions) {
     codeZone = codeForm
       ? `<div class="field pin"><span class="switch-label">${t('Code de protection')}</span>
-          <p class="hint">${hasPin ? t('Ce code est unique : il est valable pour toutes les sessions.') : t('Valable pour toutes les sessions. Laisse vide pour utiliser 0000.')}</p>
+          <p class="hint">${t('Valable pour toutes les sessions. Laisse vide pour utiliser 0000.')}</p>
           ${hasPin ? `<input id="pin-current" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Code actuel'))}" aria-label="${esc(t('Code actuel'))}">` : ''}
           <input id="pin-new" class="text" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="${esc(t('Nouveau code (4 chiffres)'))}" aria-label="${esc(t('Nouveau code (4 chiffres)'))}">
           <div class="row-actions"><button type="button" class="primary" data-act="pin-save">${t('Enregistrer')}</button>
             ${hasPin ? `<button type="button" class="quiet" data-act="pin-cancel">${t('Annuler')}</button>` : ''}</div></div>`
-      : `<div class="field pin"><button type="button" data-act="pin-open">${t('Changer le code')}</button></div>`;
+      : `<div class="field pin"><button type="button" data-act="pin-open">${t('Changer le code de protection')}</button></div>`;
   }
   return `<p class="hint">${t('Une session est une liste de chaînes. Le mode protection la verrouille : seules ces chaînes sont visibles, sans ajout, sans réglages ni liens externes.')}</p>
     <div class="sp-head"><span class="switch-label">${t('Mes sessions')}</span>${!hasPin && hasSessions ? '' : `<button type="button" data-act="session-new">${t('Nouvelle session')}</button>`}</div>
@@ -969,7 +974,7 @@ view.addEventListener('click', async (event) => {
       case 'pin-save': {
         const current = document.querySelector('#pin-current')?.value ?? null;
         let pin = document.querySelector('#pin-new').value;
-        const byDefault = !app.kid.has_pin && pin.trim() === '';
+        const byDefault = pin.trim() === '';
         if (byDefault) pin = '0000';
         await invoke('kid_set_pin', { pin, current });
         app.kid = await invoke('kid_status');
